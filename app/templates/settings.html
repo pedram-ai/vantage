@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Settings</h1>
+  <form class="inline" method="post" action="/settings">
+    <label>Contract override (blank = auto roll):</label>
+    <input name="contract_override" placeholder="e.g. ESZ26" value="{{ s.contract_override or '' }}" style="width:110px">
+    <button type="submit">Save</button>
+  </form>
+  <p class="grey">Auto roll: front month, rolling ~8 days before the 3rd Friday of Mar/Jun/Sep/Dec.</p>
+</div>
+<div class="card">
+  <h2>Add calendar event</h2>
+  <form class="inline" method="post" action="/settings/events">
+    <input name="date" type="date" required>
+    <select name="kind">
+      <option value="fomc">FOMC</option><option value="cpi">CPI</option>
+      <option value="jobs">Jobs Friday</option><option value="quarter_end">Quarter end</option>
+      <option value="half_day">Half day</option>
+    </select>
+    <input name="text" placeholder="custom text (optional)" style="width:280px">
+    <button type="submit">Add event</button>
+  </form>
+  <p class="grey">Quarterly/monthly opex and post-opex week are computed automatically.</p>
+</div>
+{% endblock %}

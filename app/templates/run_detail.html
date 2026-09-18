@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% import "_parts.html" as parts %}
+{% block content %}
+<div class="card">
+  <h1>Run {{ run.date }} <span class="grey">{{ run.generated_at_pt }}</span></h1>
+  {% if run.verdict %}<span class="badge {{ 'notrade' if 'NO TRADE' in run.verdict else ('call' if 'CALL' in run.verdict else 'put') }}">{{ run.verdict }}</span>{% endif %}
+  {% for err in run.errors %}<p class="grey">Source failed: {{ err }}</p>{% endfor %}
+</div>
+{% if run.es %}
+<div class="card">
+  <h2>ES {{ run.es.price }} ({{ run.es.contract }})</h2>
+  {% if run.es.action_map %}{{ parts.zone_cards(run.es.action_map) }}
+  <p class="grey">Open type: {{ run.es.action_map.open_type.code }} &rarr; {{ run.es.action_map.open_type.text }}</p>{% endif %}
+  <h2>ES session prints</h2>
+  {{ parts.session_table(run.es.sessions) }}
+  {% if run.es.author_levels %}
+  <h2>Author levels used</h2>
+  <table><tr><th>Author</th><th>Kind</th><th class="num">Price</th><th>Label</th></tr>
+  {% for r in run.es.author_levels %}<tr><td>{{ r.author }}</td><td>{{ r.kind }}</td><td class="num">{{ r.price }}</td><td>{{ r.label }}</td></tr>{% endfor %}
+  </table>{% endif %}
+</div>
+{% endif %}
+{% if run.spy %}
+<div class="card">
+  <h2>SPY {{ run.spy.price }} — session prints</h2>
+  {{ parts.session_table(run.spy.sessions) }}
+</div>
+{% endif %}
+{% endblock %}

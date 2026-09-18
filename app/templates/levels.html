@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Author levels</h1>
+  <p class="grey">One row per level. Tic Toc SPX levels: convert with his stated offset before entering; note the offset.</p>
+  <form class="inline" method="post" action="/levels">
+    <input name="session_date" type="date" required>
+    <select name="author">
+      <option>Tic Toc</option><option>Smashelito</option><option>Weekly</option><option>Other</option>
+    </select>
+    <select name="kind">
+      <option value="pivot">pivot</option>
+      <option value="ut1">UT1</option><option value="ut2">UT2</option><option value="fut">FUT</option>
+      <option value="dt1">DT1</option><option value="dt2">DT2</option><option value="fdt">FDT</option>
+      <option value="buy">buy</option><option value="fade">fade</option>
+      <option value="support">support</option><option value="resistance">resistance</option>
+      <option value="invalidation">invalidation</option>
+      <option value="weekly_target_up">weekly target up</option>
+      <option value="weekly_target_down">weekly target down</option>
+      <option value="weekly_extreme_hi">weekly extreme high</option>
+      <option value="weekly_extreme_lo">weekly extreme low</option>
+    </select>
+    <input name="price" type="number" step="0.25" placeholder="price" required style="width:100px">
+    <input name="label" placeholder="label (optional)" style="width:180px">
+    <input name="source_url" placeholder="source url" style="width:180px">
+    <button type="submit">Add level</button>
+  </form>
+</div>
+<div class="card">
+  <table>
+    <tr><th>Session</th><th>Author</th><th>Kind</th><th class="num">Price</th><th>Label</th><th>Source</th><th></th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.session_date }}</td><td>{{ r.author }}</td><td>{{ r.kind }}</td>
+      <td class="num">{{ r.price }}</td><td>{{ r.label }}</td>
+      <td>{% if r.source_url %}<a href="{{ r.source_url }}" target="_blank">link</a>{% endif %}</td>
+      <td><form method="post" action="/levels/{{ r.id }}/delete" style="display:inline"><button class="danger">delete</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
