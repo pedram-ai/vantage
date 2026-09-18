@@ -69,3 +69,29 @@ secret name"). No credential was copied; there is still one key.
   and render as `<abbr title=...>`. Add terms there, not in templates.
 - All prices render at **2 decimals** (`'%.2f'|format`). SPY comes off Yahoo with float
   noise like 759.5399780273438 — never print a raw price.
+
+## Repo / CI (added 2026-09-18)
+
+GitHub: **`pedram-ai/vantage`** (SSH push works — `ssh -T git@github.com` authenticates
+as `pedram-ai`; the other Patexia repos are on Bitbucket, this one is not).
+
+`.github/workflows/deploy.yml` deploys on push to `main` via **Workload Identity
+Federation — no service-account key exists.** Pool `github` / provider
+`github-provider` in patexia-vantage, scoped by `attribute.repository_owner=='pedram-ai'`,
+impersonating `vantage-deployer@patexia-vantage.iam.gserviceaccount.com`. The workflow
+gates the deploy on two tests and then repoints the daily job at the new image.
+
+- `tests/test_regression.py` — profile math vs handoff §11.
+- `tests/test_email_guard.py` — asserts the email has no images/SVG/scripts, no
+  `background:` shorthand, no SPY/SPX **number**, and that the verdict + both distances
+  survive. **Carries its own mutation proof** (injects an `<img>` and a SPY price and
+  fails if the guard doesn't catch them) per the standing test rule.
+
+## Market data (added 2026-09-18)
+
+See `docs/DATA-SOURCES.md`. Headline: **Schwab's API cannot supply ES price history**
+(equities/ETFs only) and its **refresh token dies every 7 days** — unusable for the
+unattended job. It is still the right source for *portfolio positions* later. thinkorswim
+has no public API; the TD Ameritrade API shut down 2024-05-10. Best bar source if we
+leave Yahoo: **Databento pay-as-you-go (~$0 against their $125 credit)**, which also has
+continuous-contract symbology that would replace `core/contracts.py` roll handling.
