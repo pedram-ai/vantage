@@ -72,8 +72,18 @@ secret name"). No credential was copied; there is still one key.
 
 ## Repo / CI (added 2026-09-18)
 
-GitHub: **`pedram-ai/vantage`** (SSH push works — `ssh -T git@github.com` authenticates
-as `pedram-ai`; the other Patexia repos are on Bitbucket, this one is not).
+⚠ **NOT PUSHED YET (as of 2026-09-18).** The repo `pedram-ai/vantage` **does not exist**
+(`git ls-remote` → "Repository not found") and there is no `origin`. All commits are
+local only. Deploys to date were `gcloud run deploy --source .` from this directory.
+
+SSH **does** authenticate as `pedram-ai` (`ssh -T git@github.com`), but SSH cannot
+*create* a repo — that needs an API token, i.e. `gh auth login` (device flow, needs
+Pedram) or a PAT. Two device codes expired unused on 2026-09-18.
+
+**Fastest path:** Pedram creates an empty private repo named `vantage` at
+https://github.com/new (no README/.gitignore), then:
+`git remote add origin git@github.com:pedram-ai/vantage.git && git push -u origin main`
+— no token needed, SSH already works. Or run `bash setup-github.sh` for the gh flow.
 
 `.github/workflows/deploy.yml` deploys on push to `main` via **Workload Identity
 Federation — no service-account key exists.** Pool `github` / provider
