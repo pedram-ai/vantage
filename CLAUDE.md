@@ -34,10 +34,10 @@ then update the job image:
 
 ## Not built yet (handoff M2+)
 
-Email renderer + Gmail send (the Claude scheduled task `Daily ES Action Map` still
-does the 5 AM email; keep until parity — handoff §9 M6), push notification,
-Substack/X scrapers + LLM level extraction, portfolio module, history scorecard.
-Author levels are entered manually at `/levels` for now.
+Push notification, Substack/X scrapers + LLM level extraction, portfolio module,
+history scorecard. Author levels are entered manually at `/levels` for now.
+The Claude scheduled task `Daily ES Action Map` still runs in parallel — retire it
+once Vantage's email has run clean for two weeks (handoff §9 M6).
 
 ## Email (added 2026-09-18)
 
