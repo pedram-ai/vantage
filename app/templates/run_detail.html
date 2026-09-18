@@ -8,7 +8,7 @@
 </div>
 {% if run.es %}
 <div class="card">
-  <h2>ES {{ run.es.price }} ({{ run.es.contract }})</h2>
+  <h2>ES {{ '%.2f'|format(run.es.price) }} ({{ run.es.contract }})</h2>
   {% if run.es.action_map %}{{ parts.zone_cards(run.es.action_map) }}
   <p class="grey">Open type: {{ run.es.action_map.open_type.code }} &rarr; {{ run.es.action_map.open_type.text }}</p>{% endif %}
   <h2>ES session prints</h2>
@@ -22,8 +22,13 @@
 {% endif %}
 {% if run.spy %}
 <div class="card">
-  <h2>SPY {{ run.spy.price }} — session prints</h2>
+  <h2>SPY {{ '%.2f'|format(run.spy.price) }} — session prints</h2>
   {{ parts.session_table(run.spy.sessions) }}
 </div>
+{% endif %}
+{% if run.email_html %}
+<div class="card"><h2>Email sent</h2>
+<p class="grey">{{ run.email_subject }} — {{ run.email.message_id or run.email.reason or run.email.error }}</p>
+<p><a href="/history/{{ run.id }}/email" target="_blank">view the email &rarr;</a></p></div>
 {% endif %}
 {% endblock %}

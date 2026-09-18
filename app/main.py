@@ -4,6 +4,7 @@ the app additionally checks the IAP-asserted email against the allowlist."""
 from __future__ import annotations
 
 import os
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request, HTTPException
@@ -11,6 +12,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from core import store
+from core.charts import TIMEFRAMES
+from core.glossary import GLOSSARY
 from core.run_builder import build_run
 
 ALLOWED = {e.strip().lower() for e in
@@ -18,12 +21,13 @@ ALLOWED = {e.strip().lower() for e in
 
 app = FastAPI(title="Vantage")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+templates.env.globals["GLOSSARY"] = GLOSSARY
+templates.env.globals["TIMEFRAMES"] = TIMEFRAMES
 
 
 def check_user(request: Request) -> str:
     email = request.headers.get("x-goog-authenticated-user-email", "")
     email = email.split(":")[-1].lower()
-    # Local dev / direct invoker calls (Cloud Run auth) have no IAP header.
     if email and email not in ALLOWED:
         raise HTTPException(403, f"{email} is not allowed")
     return email or "local"
@@ -35,10 +39,12 @@ def healthz():
 
 
 @app.get("/", response_class=HTMLResponse)
-def today(request: Request):
+def realtime(request: Request, tf: str = "15m"):
     check_user(request)
-    run = build_run(persist=False)
-    return templates.TemplateResponse(request, "today.html", {"run": run, "page": "today"})
+    tf = tf if tf in TIMEFRAMES else "15m"
+    run = build_run(persist=False, tf=tf, with_charts=True, fresh=True)
+    return templates.TemplateResponse(
+        request, "today.html", {"run": run, "page": "today", "tf": tf})
 
 
 @app.get("/api/price")
@@ -46,11 +52,12 @@ def api_price(request: Request):
     check_user(request)
     from core.bars import last_price
     from core.contracts import active_es_contract, yahoo_symbol
-    from datetime import date
     contract = store.get_settings().get("contract_override") or active_es_contract(date.today())
+    es = last_price(yahoo_symbol(contract))
+    spy = last_price("SPY")
     return JSONResponse({
-        "es": last_price(yahoo_symbol(contract)),
-        "spy": last_price("SPY"),
+        "es": {**es, "price": round(es["price"], 2) if es.get("price") else None},
+        "spy": {**spy, "price": round(spy["price"], 2) if spy.get("price") else None},
     })
 
 
@@ -99,6 +106,24 @@ def history_run(request: Request, run_id: str):
     return templates.TemplateResponse(request, "run_detail.html", {"run": run, "page": "history"})
 
 
+@app.get("/history/{run_id}/email", response_class=HTMLResponse)
+def history_email(request: Request, run_id: str):
+    check_user(request)
+    run = store.get_run(run_id)
+    if not run or not run.get("email_html"):
+        raise HTTPException(404, "no email archived for this run")
+    return HTMLResponse(run["email_html"])
+
+
+@app.get("/email-preview", response_class=HTMLResponse)
+def email_preview(request: Request):
+    check_user(request)
+    from core.email_render import render_email
+    run = build_run(persist=False)
+    _, html = render_email(run)
+    return HTMLResponse(html)
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     check_user(request)
@@ -119,11 +144,3 @@ def add_event(request: Request, date: str = Form(...), kind: str = Form(...), te
     from core.calendar_rules import RULES
     store.add_event({"date": date, "kind": kind, "text": text or RULES.get(kind, kind)})
     return RedirectResponse("/settings", status_code=303)
-
-
-@app.post("/jobs/daily-run")
-def daily_run_endpoint(request: Request):
-    # Reached only by IAP-allowed users or authenticated invokers.
-    check_user(request)
-    run = build_run(persist=True)
-    return {"run_id": run.get("run_id"), "verdict": run.get("verdict"), "errors": run["errors"]}

@@ -1,16 +1,24 @@
+{% macro t(term, shown=None) -%}
+<abbr title="{{ GLOSSARY.get(term, term) }}">{{ shown or term }}</abbr>
+{%- endmacro %}
+
 {% macro session_table(sessions) -%}
 <table>
-  <tr><th>Session</th><th class="num">Open</th><th class="num">High</th><th class="num">Low</th>
-      <th class="num">Close</th><th class="num">POC</th><th class="num">VAH</th><th class="num">VAL</th><th class="num">VWAP</th></tr>
+  <tr>
+    <th>{{ t('Session') }}</th>
+    {% for h in ['Open','High','Low','Close','POC','VAH','VAL','VWAP'] %}
+    <th class="num">{{ t(h) }}</th>
+    {% endfor %}
+  </tr>
   {% for s in sessions.rth|reverse %}
-  <tr><td>{{ s.label }}</td><td class="num">{{ s.open }}</td><td class="num">{{ s.high }}</td>
-      <td class="num">{{ s.low }}</td><td class="num">{{ s.close }}</td><td class="num">{{ s.poc }}</td>
-      <td class="num">{{ s.vah }}</td><td class="num">{{ s.val }}</td><td class="num">{{ s.vwap }}</td></tr>
+  <tr><td>{{ s.label }}</td>
+      {% for k in ['open','high','low','close','poc','vah','val','vwap'] %}
+      <td class="num">{{ '%.2f'|format(s[k]) }}</td>{% endfor %}</tr>
   {% endfor %}
   {% if sessions.overnight %}{% set s = sessions.overnight %}
-  <tr><td>{{ s.label }}</td><td class="num">{{ s.open }}</td><td class="num">{{ s.high }}</td>
-      <td class="num">{{ s.low }}</td><td class="num">{{ s.close }}</td><td class="num">{{ s.poc }}</td>
-      <td class="num">{{ s.vah }}</td><td class="num">{{ s.val }}</td><td class="num">{{ s.vwap }}</td></tr>
+  <tr><td>{{ s.label }}</td>
+      {% for k in ['open','high','low','close','poc','vah','val','vwap'] %}
+      <td class="num">{{ '%.2f'|format(s[k]) }}</td>{% endfor %}</tr>
   {% endif %}
 </table>
 {%- endmacro %}
@@ -19,17 +27,17 @@
 <table class="ladder">
   {% for r in rows %}
   <tr class="{{ 'price-row' if r.is_price }}">
-    <td class="px {{ 'b' if r.labels or r.is_price }}">{{ r.price }}</td>
-    <td style="width:240px">
+    <td class="px {{ 'b' if r.labels or r.is_price }}">{{ '%.2f'|format(r.price) }}</td>
+    <td style="width:210px">
       <div class="bar {{ 'poc' if r.is_poc else ('inval' if r.in_value) }}"
            style="width:{{ [r.pct, 2]|max }}%;
                   {% if r.is_vah %}border-top:2px dotted #0b7285;{% endif %}
                   {% if r.is_val %}border-bottom:2px dotted #0b7285;{% endif %}"></div>
     </td>
     <td class="lbl">
-      {% if r.is_price %}&larr; price now{% endif %}
+      {% if r.is_price %}&larr; now{% endif %}
       {{ r.labels|join(' · ') }}
-      {% if r.is_poc %}<b>3-day POC</b>{% endif %}
+      {% if r.is_poc %}<b><abbr title="{{ GLOSSARY['POC'] }}">3-day POC</abbr></b>{% endif %}
     </td>
   </tr>
   {% endfor %}
@@ -40,34 +48,40 @@
 {% set z = am.zones %}
 {% if z.breakout %}
 <div class="zone-card call">
-  <div class="t">&#9650; CALL ZONE &middot; breakout {{ '(low odds today)' if z.breakout.low_odds }}</div>
-  Buy calls if price {{ z.breakout.trigger }}<br>
-  Target {{ z.breakout.targets|join(', then ') }}{% if z.breakout.cap %} &middot; never chase past {{ z.breakout.cap }}{% endif %}
-  &middot; Stop back below {{ z.breakout.stop }}
+  <div class="t">&#9650; {{ t('CALL ZONE') }} · breakout{{ ' · low odds' if z.breakout.low_odds }}</div>
+  Calls if {{ z.breakout.trigger }} <span class="sub">({{ z.breakout.internals }})</span><br>
+  T {{ z.breakout.targets|join(' / ') or '—' }}{% if z.breakout.cap %} · cap {{ z.breakout.cap }}{% endif %} · Stop {{ z.breakout.stop }}
 </div>
 {% endif %}
 {% if z.fade %}
 <div class="zone-card put">
-  <div class="t">&#9660; PUT ZONE &middot; sell the rejection {{ '(preferred)' if z.fade.preferred }}</div>
-  Band {{ z.fade.band.lo }}&ndash;{{ z.fade.band.hi }} <span class="grey" style="color:#ffcdd2">[{{ z.fade.band.sources|join(', ') }}]</span><br>
-  Buy puts if price {{ z.fade.trigger }}<br>
-  Target {{ z.fade.targets|join(', then ') }} &middot; Stop above {{ z.fade.stop }}
+  <div class="t">&#9660; {{ t('PUT ZONE') }} · fade{{ ' · preferred' if z.fade.preferred }}</div>
+  {{ z.fade.band.lo }}–{{ z.fade.band.hi }} <span class="sub">[{{ z.fade.band.sources|join(', ') }}]</span><br>
+  Puts if {{ z.fade.trigger }} <span class="sub">({{ z.fade.internals }})</span><br>
+  T {{ z.fade.targets|join(' / ') or '—' }} · Stop {{ z.fade.stop }}
 </div>
 {% endif %}
 {% if z.dip %}
 <div class="zone-card call">
-  <div class="t">&#9650; CALL ZONE &middot; buy the hold {{ '(preferred)' if z.dip.preferred }}</div>
-  Band {{ z.dip.band.lo }}&ndash;{{ z.dip.band.hi }} <span style="color:#c8e6c9">[{{ z.dip.band.sources|join(', ') }}]</span><br>
-  Buy calls if price {{ z.dip.trigger }}<br>
-  Target {{ z.dip.targets|join(', then ') }} &middot; Stop below {{ z.dip.stop }}
+  <div class="t">&#9650; {{ t('CALL ZONE') }} · dip{{ ' · preferred' if z.dip.preferred }}</div>
+  {{ z.dip.band.lo }}–{{ z.dip.band.hi }} <span class="sub">[{{ z.dip.band.sources|join(', ') }}]</span><br>
+  Calls if {{ z.dip.trigger }} <span class="sub">({{ z.dip.internals }})</span><br>
+  T {{ z.dip.targets|join(' / ') or '—' }} · Stop {{ z.dip.stop }}
 </div>
 {% endif %}
 {% if z.breakdown %}
 <div class="zone-card put">
-  <div class="t">&#9660; PUT ZONE &middot; breakdown {{ '(low odds today)' if z.breakdown.low_odds }}</div>
-  Buy puts if price {{ z.breakdown.trigger }}<br>
-  Target {{ z.breakdown.targets|join(', then ') }}{% if z.breakdown.cap %} &middot; never chase past {{ z.breakdown.cap }}{% endif %}
-  &middot; Stop back above {{ z.breakdown.stop }}
+  <div class="t">&#9660; {{ t('PUT ZONE') }} · breakdown{{ ' · low odds' if z.breakdown.low_odds }}</div>
+  Puts if {{ z.breakdown.trigger }} <span class="sub">({{ z.breakdown.internals }})</span><br>
+  T {{ z.breakdown.targets|join(' / ') or '—' }}{% if z.breakdown.cap %} · cap {{ z.breakdown.cap }}{% endif %} · Stop {{ z.breakdown.stop }}
 </div>
 {% endif %}
+{%- endmacro %}
+
+{% macro tf_switch(tf, anchor='') -%}
+<span class="tfbar">
+  {% for k, cfg in TIMEFRAMES.items() %}
+  <a href="?tf={{ k }}{{ anchor }}" class="{{ 'on' if tf==k }}">{{ cfg.label }}</a>
+  {% endfor %}
+</span>
 {%- endmacro %}

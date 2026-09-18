@@ -3,12 +3,13 @@
 <div class="card">
   <h1>Run history</h1>
   <table>
-    <tr><th>Date</th><th>Generated</th><th>Verdict</th><th>ES price</th><th>Errors</th><th></th></tr>
+    <tr><th>Date</th><th>Generated</th><th>Verdict</th><th>ES price</th><th>Email</th><th>Errors</th><th></th></tr>
     {% for r in runs %}
     <tr>
       <td>{{ r.date }}</td><td>{{ r.generated_at_pt }}</td>
       <td>{{ r.verdict or '—' }}</td>
-      <td class="num">{{ r.es.price if r.es else '—' }}</td>
+      <td class="num">{{ '%.2f'|format(r.es.price) if r.es else '—' }}</td>
+      <td>{{ 'sent' if r.email and r.email.ok else (r.email.reason if r.email else '—') }}</td>
       <td>{{ r.errors|join('; ') if r.errors else '' }}</td>
       <td><a href="/history/{{ r.id }}">view</a></td>
     </tr>

@@ -19,10 +19,10 @@ PROFILE_WEIGHT = 1.5   # §2.1: profile levels outrank author levels
 AUTHOR_WEIGHT = 1.0
 
 INTERNALS = {
-    "dip": "TICK holds above -400 after the sweep / TRIN under 1",
-    "fade": "TICK fails to follow through above +700",
-    "breakout": "TICK stays above 0 with +700 prints",
-    "breakdown": "TICK stays below 0 with -700 prints / TRIN above 1",
+    "dip": "TICK > -400, TRIN < 1",
+    "fade": "TICK fails above +700",
+    "breakout": "TICK > 0, +700 prints",
+    "breakdown": "TICK < 0, TRIN > 1",
 }
 
 
@@ -178,18 +178,18 @@ def build_action_map(price: float,
 
     zones = {}
     if fade:
-        t = two_below(fade.lo)
         zones["fade"] = {
             "band": fade.to_dict(),
-            "trigger": f"tags {fade.lo:g}-{fade.hi:g} and rejects. {INTERNALS['fade']}",
-            "targets": t, "stop": fade.hi + 5,
+            "trigger": f"tag {fade.lo:g}-{fade.hi:g}, reject",
+            "internals": INTERNALS["fade"],
+            "targets": two_below(fade.lo), "stop": fade.hi + 5,
             "preferred": preferred_fade_dip,
         }
-        bo_t = two_above(fade.hi)
         zones["breakout"] = {
             "above": fade.hi,
-            "trigger": f"holds above {fade.hi:g} for 15+ min. {INTERNALS['breakout']}",
-            "targets": bo_t,
+            "trigger": f"hold > {fade.hi:g}, 15 min",
+            "internals": INTERNALS["breakout"],
+            "targets": two_above(fade.hi),
             "stop": fade.lo,
             "cap": weekly_ext_hi,
             "low_odds": preferred_fade_dip,
@@ -198,16 +198,17 @@ def build_action_map(price: float,
         t_up = [x for x in (s1.poc, s1.vah) if x > dip.hi][:2] or two_above(dip.hi)
         zones["dip"] = {
             "band": dip.to_dict(),
-            "trigger": f"dips into {dip.lo:g}-{dip.hi:g} and holds. {INTERNALS['dip']}",
+            "trigger": f"dip into {dip.lo:g}-{dip.hi:g}, hold",
+            "internals": INTERNALS["dip"],
             "targets": t_up, "stop": (invalidation or dip.lo) - 5,
             "preferred": preferred_fade_dip,
         }
     if invalidation:
-        bd_t = two_below(invalidation)
         zones["breakdown"] = {
             "below": invalidation,
-            "trigger": f"holds below {invalidation:g} for 15+ min. {INTERNALS['breakdown']}",
-            "targets": bd_t,
+            "trigger": f"hold < {invalidation:g}, 15 min",
+            "internals": INTERNALS["breakdown"],
+            "targets": two_below(invalidation),
             "stop": dip.hi if dip else invalidation + 10,
             "cap": weekly_ext_lo,
             "low_odds": preferred_fade_dip,

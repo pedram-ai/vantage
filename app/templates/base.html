@@ -42,12 +42,20 @@ button { background:var(--blue); color:#fff; border:none; border-radius:5px; pad
 button.danger { background:#b71c1c; padding:2px 8px; font-size:11px; }
 .pill { display:inline-block; background:#e3f2fd; color:#0d47a1; border-radius:10px; padding:1px 8px; font-size:11px; margin-left:6px; }
 .cols { display:flex; gap:16px; flex-wrap:wrap; } .cols > div { flex:1; min-width:340px; }
+abbr { text-decoration:underline dotted #aaa; cursor:help; text-underline-offset:2px; }
+.zone-card .sub { opacity:.75; font-size:11px; }
+.refresh { float:right; font-size:13px; background:#0d47a1; color:#fff; text-decoration:none;
+           padding:5px 12px; border-radius:6px; font-weight:600; }
+.tfbar { font-size:12px; font-weight:400; margin-left:8px; }
+.tfbar a { text-decoration:none; color:#555; background:#eceff1; border-radius:5px;
+           padding:3px 9px; margin-right:4px; }
+.tfbar a.on { background:#0d47a1; color:#fff; }
 </style>
 </head>
 <body>
 <header>
   <span class="logo">VANTAGE</span>
-  <a href="/" class="{{ 'active' if page=='today' }}">Today</a>
+  <a href="/" class="{{ 'active' if page=='today' }}">Real Time</a>
   <a href="/levels" class="{{ 'active' if page=='levels' }}">Levels</a>
   <a href="/history" class="{{ 'active' if page=='history' }}">History</a>
   <a href="/settings" class="{{ 'active' if page=='settings' }}">Settings</a>

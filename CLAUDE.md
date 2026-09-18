@@ -38,3 +38,34 @@ Email renderer + Gmail send (the Claude scheduled task `Daily ES Action Map` sti
 does the 5 AM email; keep until parity — handoff §9 M6), push notification,
 Substack/X scrapers + LLM level extraction, portfolio module, history scorecard.
 Author levels are entered manually at `/levels` for now.
+
+## Email (added 2026-09-18)
+
+Vantage sends its own email via **AWS SES v2** (`core/mailer.py`, hand-rolled SigV4 over
+curl_cffi — no boto3 dependency). It reuses **Connect's existing verified sender**
+`notify.patexia.com`: the Vantage compute SA was granted `secretmanager.secretAccessor`
+on `connect-redesign-aws-access-key-id` / `-secret-access-key` **in patexia-connect**, and
+Cloud Run references them cross-project by PROJECT NUMBER
+(`projects/349112552843/secrets/...` — the project *ID* form is rejected as "not a valid
+secret name"). No credential was copied; there is still one key.
+
+- ⛔ **No email on Sat/Sun.** Two independent guards: Scheduler cron is `1-5`, and
+  `jobs/daily_run.py` refuses to send when `weekday() >= 5` regardless of trigger.
+  Override for testing only with `--force-email`.
+- ⛔ **No SPY/SPX numbers, strikes or expiries in the email** (handoff §5.1). SPY lives
+  on the platform only. The email is ES-only.
+- Rendered HTML is archived on the run doc (`email_html`) and viewable at
+  `/history/<id>/email`; `/email-preview` renders today's without sending.
+- First live send verified 2026-09-18, SES message id `010001a0b6ab5af9-...`.
+
+## UI (added 2026-09-18)
+
+- `/` is **Real Time** — recomputes from fresh bars on every load (`fresh=True` bypasses
+  the 60s bar cache) with an explicit Refresh button.
+- **Candlestick charts** (`core/charts.py`) for ES and SPY, server-rendered SVG, with
+  prior POC/VAH/VAL drawn as dashed lines. Timeframes: 15 min / 1 hour (resampled from
+  5m bars) and Daily / Weekly (separate Yahoo fetch). SVG is fine in the UI, never email.
+- **Hover definitions** for POC/VAH/VAL/VWAP/RTH/TICK/TRIN/etc. live in `core/glossary.py`
+  and render as `<abbr title=...>`. Add terms there, not in templates.
+- All prices render at **2 decimals** (`'%.2f'|format`). SPY comes off Yahoo with float
+  noise like 759.5399780273438 — never print a raw price.

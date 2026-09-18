@@ -10,34 +10,38 @@
 {% set es = run.es %}
 {% set am = es.action_map %}
 <div class="card">
-  <h1>ES {{ es.price }} <span class="grey">{{ es.contract }} &middot; {{ run.generated_at_pt }}</span>
+  <h1>ES {{ '%.2f'|format(es.price) }}
+    <span class="grey">{{ parts.t('Contract', es.contract) }} · {{ run.generated_at_pt }}</span>
     {% if am %}
     <span class="badge {{ 'notrade' if am.zone_state=='none' else ('call' if 'CALL' in am.verdict else ('put' if 'PUT' in am.verdict else 'aside')) }}">{{ am.verdict }}</span>
     {% endif %}
+    <a class="refresh" href="?tf={{ tf }}">&#8635; Refresh</a>
   </h1>
   {% if am %}
   <p>
-    {% if am.distances.put_zone_above %}<span class="down">&#9660; PUT ZONE is {{ am.distances.put_zone_above.pts }} pts above ({{ am.distances.put_zone_above.range[0] }}&ndash;{{ am.distances.put_zone_above.range[1] }})</span> &middot; {% endif %}
-    {% if am.distances.call_zone_below %}<span class="up">&#9650; CALL ZONE is {{ am.distances.call_zone_below.pts }} pts below ({{ am.distances.call_zone_below.range[0] }}&ndash;{{ am.distances.call_zone_below.range[1] }})</span>{% endif %}
+    {% if am.distances.put_zone_above %}<span class="down">&#9660; PUT {{ '%.2f'|format(am.distances.put_zone_above.pts) }} pts up ({{ am.distances.put_zone_above.range[0] }}–{{ am.distances.put_zone_above.range[1] }})</span>{% endif %}
+    {% if am.distances.call_zone_below %}<span class="up" style="margin-left:14px">&#9650; CALL {{ '%.2f'|format(am.distances.call_zone_below.pts) }} pts down ({{ am.distances.call_zone_below.range[0] }}–{{ am.distances.call_zone_below.range[1] }})</span>{% endif %}
   </p>
-  <p class="grey">Open type: {{ am.open_type.code }} &rarr; {{ am.open_type.text }}</p>
+  <p class="grey">{{ parts.t('Open type') }}: <abbr title="{{ am.open_type.text }}">{{ am.open_type.code }}</abbr></p>
   {% for e in es.events %}<div class="eventbox">{{ e.text }}</div>{% endfor %}
   {% for n in am.notes %}<p class="grey">&#9432; {{ n }}</p>{% endfor %}
   {% endif %}
+</div>
+
+<div class="card">
+  <h2>ES chart {{ parts.tf_switch(tf) }}</h2>
+  {{ es.chart_svg|safe }}
 </div>
 
 <div class="cols">
   <div class="card">
     <h2>Action Map</h2>
     {% if am %}{{ parts.zone_cards(am) }}
-    {% if not es.author_levels %}
-    <p class="grey">No author levels entered for {{ run.date }} — map is profile-only.
-       <a href="/levels">Add Tic Toc / Smashelito levels &rarr;</a></p>
-    {% endif %}
+    {% if not es.author_levels %}<p class="grey">Profile-only — <a href="/levels">add author levels</a>.</p>{% endif %}
     {% else %}<p class="grey">Not enough session data.</p>{% endif %}
   </div>
   <div class="card">
-    <h2>Level Map <span class="grey">3-session profile, 5-pt bins</span></h2>
+    <h2>ES Level Map <span class="grey">3-session, 5-pt bins</span></h2>
     {{ parts.ladder(es.ladder) }}
   </div>
 </div>
@@ -50,14 +54,17 @@
 
 {% if run.spy %}
 {% set spy = run.spy %}
+<div class="card">
+  <h2>SPY {{ '%.2f'|format(spy.price) }} — chart {{ parts.tf_switch(tf) }}</h2>
+  {{ spy.chart_svg|safe }}
+</div>
 <div class="cols">
   <div class="card">
-    <h1>SPY {{ spy.price }}</h1>
-    <h2 style="margin-top:10px">SPY session prints</h2>
+    <h2>SPY session prints</h2>
     {{ parts.session_table(spy.sessions) }}
   </div>
   <div class="card">
-    <h2>SPY Level Map <span class="grey">3-session profile, 1-pt bins</span></h2>
+    <h2>SPY Level Map <span class="grey">3-session, 1-pt bins</span></h2>
     {{ parts.ladder(spy.ladder) }}
   </div>
 </div>

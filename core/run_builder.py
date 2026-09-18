@@ -6,6 +6,7 @@ from datetime import datetime, date
 
 from .bars import fetch_bars, BarsError
 from .calendar_rules import builtin_events
+from .charts import chart_for
 from .contracts import active_es_contract, yahoo_symbol
 from .profile import ET, PT, build_sessions
 from .zones import build_action_map
@@ -48,7 +49,7 @@ def _ladder(sess: dict, price: float, bin_pts: int) -> list[dict]:
         put(s1.vah, f"prior VAH {s1.vah:g}")
         put(s1.poc, f"prior POC {s1.poc:g}")
         put(s1.val, f"prior VAL {s1.val:g}")
-        put(s1.vwap, f"prior VWAP {s1.vwap:.1f}")
+        put(s1.vwap, f"prior VWAP {s1.vwap:.2f}")
         put(s1.open, f"prior open {s1.open:g}")
     if len(rth) > 1:
         put(rth[1].poc, f"prior-prior POC {rth[1].poc:g}")
@@ -81,7 +82,8 @@ def _ladder(sess: dict, price: float, bin_pts: int) -> list[dict]:
     return rows
 
 
-def build_run(persist: bool = False) -> dict:
+def build_run(persist: bool = False, tf: str = "15m", with_charts: bool = False,
+              fresh: bool = False) -> dict:
     now_et = datetime.now(ET)
     today: date = now_et.date()
     contract = store.get_settings().get("contract_override") or active_es_contract(today)
@@ -91,7 +93,7 @@ def build_run(persist: bool = False) -> dict:
     # --- ES ---
     es = None
     try:
-        es_bars, es_meta = fetch_bars(yahoo_symbol(contract))
+        es_bars, es_meta = fetch_bars(yahoo_symbol(contract), use_cache=not fresh)
         es_sess = build_sessions(es_bars)
         es_price = float(es_meta.get("regularMarketPrice") or es_sess["rth"][0].close)
         rth = es_sess["rth"]
@@ -103,9 +105,15 @@ def build_run(persist: bool = False) -> dict:
         action_map = build_action_map(
             es_price, s1, s2, es_sess["overnight"], author_levels, is_qopex,
         ) if s1 else None
+        es_chart = None
+        if with_charts:
+            lv = [(s1.poc, f"pPOC {s1.poc:g}"), (s1.vah, f"pVAH {s1.vah:g}"),
+                  (s1.val, f"pVAL {s1.val:g}")] if s1 else []
+            es_chart = chart_for(yahoo_symbol(contract), tf, es_bars, lv)
         es = {
             "contract": contract,
-            "price": es_price,
+            "price": round(es_price, 2),
+            "chart_svg": es_chart,
             "sessions": _sessions_payload(es_sess),
             "ladder": _ladder(es_sess, es_price, 5),
             "action_map": action_map,
@@ -118,11 +126,18 @@ def build_run(persist: bool = False) -> dict:
     # --- SPY ---
     spy = None
     try:
-        spy_bars, spy_meta = fetch_bars("SPY")
+        spy_bars, spy_meta = fetch_bars("SPY", use_cache=not fresh)
         spy_sess = build_sessions(spy_bars)
         spy_price = float(spy_meta.get("regularMarketPrice") or spy_sess["rth"][0].close)
+        spy_chart = None
+        if with_charts:
+            srth = spy_sess["rth"]
+            lv = [(srth[0].poc, f"pPOC {srth[0].poc:g}"), (srth[0].vah, f"pVAH {srth[0].vah:g}"),
+                  (srth[0].val, f"pVAL {srth[0].val:g}")] if srth else []
+            spy_chart = chart_for("SPY", tf, spy_bars, lv)
         spy = {
-            "price": spy_price,
+            "price": round(spy_price, 2),
+            "chart_svg": spy_chart,
             "sessions": _sessions_payload(spy_sess),
             "ladder": _ladder(spy_sess, spy_price, 1),
         }
