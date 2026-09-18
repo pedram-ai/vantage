@@ -18,7 +18,7 @@ import urllib.parse
 from curl_cffi import requests as curl_requests
 
 REGION = os.environ.get("SES_AWS_REGION", "us-east-1")
-FROM = os.environ.get("SES_FROM_EMAIL", "Vantage <no-reply@notify.patexia.com>")
+FROM = os.environ.get("SES_FROM_EMAIL", "Vantage <vantage@notify.patexia.com>")
 REPLY_TO = os.environ.get("SES_REPLY_TO", "")
 SERVICE = "ses"
 
