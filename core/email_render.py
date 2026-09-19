@@ -72,6 +72,17 @@ def render_email(run: dict) -> tuple[str, str]:
              f'{run.get("generated_at_pt","")}</span></div>')
     p.append(f'<div style="margin-bottom:8px;">{_badge(am["verdict"])}</div>')
 
+    # Provenance of the price the whole map is measured from. A delayed quote
+    # during live trading can shift every distance below, so it is stated, not
+    # implied.
+    q = es.get("quote") or {}
+    if q.get("source_label"):
+        live = q.get("source") == "schwab"
+        p.append(
+            f'<div style="font-size:12px;color:{GREEN if live else "#b26a00"};'
+            f'margin-bottom:8px;">{"" if live else "&#9888; "}'
+            f'{q["source_label"]} &middot; {q.get("age_text","")}</div>')
+
     # 2. distance line + open type
     dist = am.get("distances", {})
     bits = []

@@ -10,6 +10,30 @@
   <p class="grey">Auto roll: front month, rolling ~8 days before the 3rd Friday of Mar/Jun/Sep/Dec.</p>
 </div>
 <div class="card">
+  <h2>Schwab — real-time price</h2>
+  <p class="grey">History stays on Yahoo. Schwab supplies only the live price,
+    which Yahoo delivers 10 minutes late.
+    {% if schwab.working %}<b style="color:#2e7d32">Connected{% if schwab.last_price %} — {{ schwab.symbol }} {{ '%.2f'|format(schwab.last_price) }}{% endif %}.</b>
+    {% elif schwab.linked %}<b style="color:#b26a00">Linked but not returning a quote — the 7-day token has probably expired; reconnect.</b>
+    {% elif schwab.configured %}<b style="color:#b26a00">App saved — not linked yet.</b>
+    {% else %}<b style="color:#b26a00">Not configured.</b>{% endif %}
+  </p>
+  <p class="grey">Register an app at <a href="https://developer.schwab.com" target="_blank">developer.schwab.com</a>
+    with this exact callback URL:<br><code>{{ redirect_uri }}</code></p>
+  <form class="inline" method="post" action="/settings/schwab">
+    <input name="app_key" placeholder="App key" style="width:230px" autocomplete="off">
+    <input name="app_secret" type="password" placeholder="App secret" style="width:180px" autocomplete="off">
+    <button type="submit">Save</button>
+  </form>
+  {% if schwab.configured %}
+  <p style="margin-top:8px"><a class="refresh" style="float:none" href="/schwab/connect">
+    {{ 'Reconnect' if schwab.linked else 'Connect' }} Schwab &rarr;</a></p>
+  <p class="grey">The refresh token expires every 7 days — reconnect weekly.
+    If it lapses, the map still builds and falls back to delayed Yahoo prices.</p>
+  {% endif %}
+</div>
+
+<div class="card">
   <h2>Add calendar event</h2>
   <form class="inline" method="post" action="/settings/events">
     <input name="date" type="date" required>

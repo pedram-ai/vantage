@@ -17,6 +17,14 @@
     {% endif %}
     <a class="refresh" href="?tf={{ tf }}">&#8635; Refresh</a>
   </h1>
+  {% if es.quote %}
+  <p class="src {{ 'live' if es.quote.source=='schwab' else 'delayed' }}">
+    {{ es.quote.source_label }} · {{ es.quote.age_text }}
+    {% if es.quote.source=='yahoo' and es.quote.market_open %}
+    — <a href="/settings">link Schwab for real-time</a>
+    {% endif %}
+  </p>
+  {% endif %}
   {% if am %}
   <p>
     {% if am.distances.put_zone_above %}<span class="down">&#9660; PUT {{ '%.2f'|format(am.distances.put_zone_above.pts) }} pts up ({{ am.distances.put_zone_above.range[0] }}–{{ am.distances.put_zone_above.range[1] }})</span>{% endif %}
@@ -56,6 +64,7 @@
 {% set spy = run.spy %}
 <div class="card">
   <h2>SPY {{ '%.2f'|format(spy.price) }} — chart {{ parts.tf_switch(tf) }}</h2>
+  {% if spy.quote %}<p class="src delayed">{{ spy.quote.source_label }} · {{ spy.quote.age_text }}</p>{% endif %}
   {{ spy.chart_svg|safe }}
 </div>
 <div class="cols">

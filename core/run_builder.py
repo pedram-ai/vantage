@@ -9,6 +9,7 @@ from .calendar_rules import builtin_events
 from .charts import chart_for
 from .contracts import active_es_contract, yahoo_symbol
 from .profile import ET, PT, build_sessions
+from .quote import es_quote, es_market_open
 from .zones import build_action_map
 from . import store
 
@@ -93,9 +94,13 @@ def build_run(persist: bool = False, tf: str = "15m", with_charts: bool = False,
     # --- ES ---
     es = None
     try:
+        # HISTORY comes from Yahoo (free, and a 10-min delay is meaningless for
+        # a completed session). The LIVE price prefers Schwab — see core/quote.py.
         es_bars, es_meta = fetch_bars(yahoo_symbol(contract), use_cache=not fresh)
         es_sess = build_sessions(es_bars)
-        es_price = float(es_meta.get("regularMarketPrice") or es_sess["rth"][0].close)
+        es_q = es_quote(contract, es_meta,
+                        yahoo_fallback_price=es_sess["rth"][0].close if es_sess["rth"] else None)
+        es_price = float(es_q["price"])
         rth = es_sess["rth"]
         s1 = rth[0] if rth else None
         s2 = rth[1] if len(rth) > 1 else None
@@ -113,6 +118,7 @@ def build_run(persist: bool = False, tf: str = "15m", with_charts: bool = False,
         es = {
             "contract": contract,
             "price": round(es_price, 2),
+            "quote": es_q,
             "chart_svg": es_chart,
             "sessions": _sessions_payload(es_sess),
             "ladder": _ladder(es_sess, es_price, 5),
@@ -135,8 +141,18 @@ def build_run(persist: bool = False, tf: str = "15m", with_charts: bool = False,
             lv = [(srth[0].poc, f"pPOC {srth[0].poc:g}"), (srth[0].vah, f"pVAH {srth[0].vah:g}"),
                   (srth[0].val, f"pVAL {srth[0].val:g}")] if srth else []
             spy_chart = chart_for("SPY", tf, spy_bars, lv)
+        # SPY is a different entitlement from CME futures. Yahoo's table lists
+        # Nasdaq real-time but does not break out NYSE Arca, so the delay here
+        # is UNVERIFIED — say so rather than imply it is live.
+        from .quote import _age_text
         spy = {
             "price": round(spy_price, 2),
+            "quote": {
+                "source": "yahoo",
+                "source_label": "Yahoo · delay unverified",
+                "as_of": spy_meta.get("regularMarketTime"),
+                "age_text": _age_text(spy_meta.get("regularMarketTime"), es_market_open()),
+            },
             "chart_svg": spy_chart,
             "sessions": _sessions_payload(spy_sess),
             "ladder": _ladder(spy_sess, spy_price, 1),

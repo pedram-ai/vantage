@@ -124,11 +124,61 @@ def email_preview(request: Request):
     return HTMLResponse(html)
 
 
+def _redirect_uri(request: Request) -> str:
+    """Schwab callback. Must match the app's registered callback exactly."""
+    base = os.environ.get("VANTAGE_BASE_URL") or str(request.base_url).rstrip("/")
+    return f"{base}/schwab/callback"
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     check_user(request)
+    from core import schwab
     s = store.get_settings()
-    return templates.TemplateResponse(request, "settings.html", {"s": s, "page": "settings"})
+    return templates.TemplateResponse(request, "settings.html", {
+        "s": s, "page": "settings",
+        "schwab": schwab.status(),
+        "redirect_uri": _redirect_uri(request),
+    })
+
+
+@app.post("/settings/schwab")
+def save_schwab_creds(request: Request, app_key: str = Form(""), app_secret: str = Form("")):
+    """Pedram pastes his own developer.schwab.com app credentials; they go
+    straight into Secret Manager and are never echoed back to the page."""
+    check_user(request)
+    from core import schwab
+    if app_key.strip():
+        schwab.write_secret(schwab.SECRET_KEY, app_key.strip())
+    if app_secret.strip():
+        schwab.write_secret(schwab.SECRET_SECRET, app_secret.strip())
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.get("/schwab/connect")
+def schwab_connect(request: Request):
+    check_user(request)
+    from core import schwab
+    url = schwab.authorize_url(_redirect_uri(request))
+    if not url:
+        raise HTTPException(400, "Save your Schwab app key and secret first")
+    return RedirectResponse(url, status_code=303)
+
+
+@app.get("/schwab/callback", response_class=HTMLResponse)
+def schwab_callback(request: Request, code: str = "", error: str = ""):
+    check_user(request)
+    from core import schwab
+    if error or not code:
+        return HTMLResponse(
+            f"<p>Schwab returned: {error or 'no code'}</p><p><a href='/settings'>back</a></p>",
+            status_code=400)
+    res = schwab.exchange_code(code, _redirect_uri(request))
+    if not res.get("ok"):
+        return HTMLResponse(
+            f"<p>Could not complete the Schwab link: {res.get('error')}</p>"
+            f"<p><a href='/settings'>back</a></p>", status_code=400)
+    return RedirectResponse("/settings", status_code=303)
 
 
 @app.post("/settings")
