@@ -108,3 +108,74 @@ Two structural facts that drive everything:
 - developer.schwab.com returns 403 to automated fetching, so Schwab findings rest on
   `schwab-py`'s docs, an archived copy of the official API docs, and community sources.
   Worth one manual browser check before building against it.
+
+---
+
+## ⚠ Correction + new finding (2026-09-19): "real time" is not real time on ES
+
+Two things this doc got wrong by omission, both material:
+
+### 1. Yahoo's ES quote is 10 MINUTES DELAYED
+
+Yahoo's own exchange table lists **Chicago Mercantile Exchange (CME), suffix `.CME`,
+delay 10 min, provider ICE Data Services** — https://help.yahoo.com/kb/SLN2310.html.
+So `/` (the page titled **Real Time**) and the 5 AM email both show an ES price that can
+be up to 10 minutes stale, and every zone distance computed from it inherits that.
+
+⛔ **This is not a rounding issue.** ES routinely travels several points in 10 minutes;
+on 2026-09-18 it moved 7675 → 7695 in about 20. A "NO TRADE, 11 pts from the dip band"
+verdict can be wrong at the moment it is displayed.
+
+⚠ **Not yet measured live.** The delay is documented, not observed — attempts to measure
+it on Sat 2026-09-19 returned a 20-hour-old quote because the market was closed, which is
+the weekend, not latency. **Measure on a trading day** before quoting a number:
+`python -c "..."` comparing `meta.regularMarketTime` to now. Until then this is Yahoo's
+claim about Yahoo, which is good enough to act on but not a measurement of ours.
+
+Yahoo's US equity feed is a different entitlement (the table shows Nasdaq real-time,
+NYSE *Indices* 15 min; SPY on NYSE Arca is not broken out) — **SPY's delay is UNVERIFIED**
+and must be measured the same way, not assumed.
+
+### 2. Schwab IS a real-time ES source — and it is free for Pedram
+
+The headline above ("Schwab cannot be Vantage's ES data source") is right about
+**history** and was over-generalised to mean market data as a whole. Split the two:
+
+| | Schwab |
+|---|---|
+| ES **historical** bars (the profile engine) | ❌ none — REST `/pricehistory` is equities/ETFs only |
+| ES **real-time** quote | ✅ REST `get_quotes(['/ES'])` |
+| ES **real-time** 1-min OHLCV | ✅ streaming `CHART_FUTURES` |
+| ES **real-time** top of book | ✅ streaming `LEVELONE_FUTURES` |
+
+Real-time futures data comes with the **brokerage entitlement** — no extra market-data
+subscription and no additional entitlement for an individual developer
+([schwab-py streaming docs](https://schwab-py.readthedocs.io/en/latest/streaming.html)).
+Every genuinely free real-time CME feed works this way: the entitlement rides on a
+broker account. There is **no free public real-time CME API** — CME's own WebSocket
+starts at $0.50/GB plus ILA fees, and free tiers at TradingView/Yahoo/Massive are all
+10-min delayed. Non-pro real-time list is **$1.55/mo** top-of-book (see fee list above).
+
+**"Can we save the datapoints?" — yes, going forward only.** Recording the
+`CHART_FUTURES` stream into Firestore builds true 1-minute history from day one, at
+full real-time fidelity. It **cannot backfill**, so it does not replace Yahoo/Databento
+for the prior-session profiles the map depends on.
+
+### Recommended shape
+
+- **History / session profiles** → Yahoo today, Databento when it matters. A 10-min
+  delay is irrelevant for yesterday's completed session.
+- **Live price on the Real Time page + the email's "price now"** → Schwab quotes.
+- **Portfolio positions** → Schwab (unchanged).
+
+⛔ **The 7-day refresh-token expiry still rules Schwab out of the unattended 5 AM job**
+as a hard dependency. Design it as an *enhancement*: if a valid Schwab token exists, use
+it for the live price; otherwise fall back to Yahoo and **label the source and age on
+screen**. Never let a broken token stop the map from being produced.
+
+### Blocked on Pedram
+
+Schwab needs an app registered at developer.schwab.com under his login, plus an
+interactive OAuth sign-in with his Schwab credentials, and re-auth weekly. Those are his
+to perform — this session will not handle brokerage credentials. Approval of a new app
+has historically taken a few days ("Approved - Pending" ≠ usable).
