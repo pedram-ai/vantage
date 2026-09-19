@@ -179,3 +179,39 @@ Schwab needs an app registered at developer.schwab.com under his login, plus an
 interactive OAuth sign-in with his Schwab credentials, and re-auth weekly. Those are his
 to perform — this session will not handle brokerage credentials. Approval of a new app
 has historically taken a few days ("Approved - Pending" ≠ usable).
+
+---
+
+## Transaction history (2026-09-19): three routes, two of them closed
+
+For the Portfolio / P&L section. Goal was "every transaction since the account opened".
+
+| Route | Verdict |
+|---|---|
+| **Schwab API** `get_transactions` | ⛔ **60-day ceiling.** `start_date` "must be within 60 days of the current date" ([schwab-py](https://schwab-py.readthedocs.io/en/latest/client.html)). No parameter reaches further. Fine for the DAILY sync, useless for backfill. |
+| **Read schwab.com in Pedram's Chrome** | ⛔ **Hard-blocked.** `navigate` to `client.schwab.com` *and* `www.schwab.com` both return **"Navigation to this domain is not allowed"** — an extension-level block on brokerage domains, distinct from the per-domain "Permission denied" seen elsewhere. Not something Pedram can grant from his side, and not a login problem. Do not retry this route. |
+| **Schwab CSV export, downloaded by Pedram** | ✅ **The only path to full history.** |
+
+### ⚠ The CSV export fails SILENTLY when it is too big
+
+Schwab caps an export at roughly 1,500–10,000 rows depending on surface, and **when the cap is
+exceeded the file downloads with NO records rather than an error**. An importer that trusts it
+would record "no trades in 2024" and be confidently wrong — the
+[[wrong-shape-yields-plausible-nothing]] failure exactly.
+
+**Therefore the importer MUST:**
+1. Refuse to treat a zero-row export as "no activity" — flag it as a suspected truncation and
+   name the date range that needs re-exporting.
+2. Ask for **one file per year** (or per quarter for heavy years), not one giant file.
+3. Track coverage per date range and render **gaps** on the Sync tab, so "all time" never
+   silently means "since whenever the import happened to start".
+4. Dedupe imported vs API-synced rows on transaction id, so the 60-day overlap is harmless and
+   re-importing the same file is a no-op.
+
+### ⚠ Unverified and important: are FUTURES trades even in there?
+
+Schwab's API is documented as EQUITY/OPTION only for orders, and futures sit on a separate
+platform. Whether ES futures and ES options on futures appear in `get_transactions` — or in the
+web export — **has not been confirmed** and cannot be from this session. If they do not, the CSV
+is the only source for the trades Pedram actually cares about and the daily API sync covers
+nothing. Confirm before building the sync half.
