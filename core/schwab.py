@@ -187,8 +187,34 @@ def parse_quote(payload: dict, symbol: str) -> dict | None:
         if isinstance(v, (int, float)) and v > 0:
             ts = float(v) / 1000.0 if v > 1e12 else float(v)
             break
-    return {"price": price, "as_of": ts,
+    chg = None
+    for k in ("netPercentChange", "netPercentChangeInDouble", "percentChange"):
+        if isinstance(q.get(k), (int, float)):
+            chg = float(q[k])
+            break
+    return {"price": price, "as_of": ts, "change_pct": chg,
             "symbol": node.get("symbol") or q.get("symbol") or symbol}
+
+
+def quotes(symbols: list[str]) -> dict | None:
+    """Every symbol in ONE request — what makes live watchlists possible.
+
+    Yahoo needs one call per symbol; this is the whole list at once.
+    """
+    tok = access_token()
+    if not tok or not symbols:
+        return None
+    try:
+        r = curl_requests.get(
+            QUOTE_URL, params={"symbols": ",".join(symbols)},
+            impersonate="chrome", timeout=20,
+            headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"},
+        )
+        if r.status_code != 200:
+            return None
+        return r.json()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def quote(symbol: str = "/ES") -> dict | None:

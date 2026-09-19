@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Markets · Vantage{% endblock %}
+{% block content %}
+
+<div class="card">
+<div class="split-page">
+
+  <div class="rail">
+    <h3>Watchlists</h3>
+    <div class="lists">
+      {% for l in lists %}
+      <a class="li {{ 'on' if l.id == current.id }}" href="/markets?list={{ l.id }}">
+        {{ l.name }}<span>{{ l.symbols|length }}</span></a>
+      {% endfor %}
+    </div>
+    <form method="post" action="/watchlists" class="inline" style="margin-bottom:18px">
+      <input name="name" placeholder="New list" style="width:110px" required>
+      <button class="btn ghost" type="submit">Add</button>
+    </form>
+
+    <h3>Automatic</h3>
+    <div class="lists">
+      {% for l in autolists %}
+      <a class="li {{ 'on' if l.id == current.id }}" href="/markets?list={{ l.id }}">
+        {{ l.name }}<span>{{ l.symbols|length }}</span></a>
+      {% endfor %}
+    </div>
+    <p class="faint">These two build themselves from your positions and trades.</p>
+  </div>
+
+  <div class="railmain">
+    <div class="pills">
+      <span class="pill on">{{ current.name }}</span>
+      {% if not current.auto %}
+      <form method="post" action="/watchlists/{{ current.id }}/symbols" class="inline">
+        <input name="symbol" placeholder="Add symbol" style="width:120px" required>
+        <button class="btn ghost" type="submit">＋ Add</button>
+      </form>
+      {% endif %}
+      <a class="pill" style="margin-left:auto" href="?list={{ current.id }}&amp;refresh=1">&#8635; Refresh</a>
+      {% if not current.auto %}
+      <form method="post" action="/watchlists/{{ current.id }}/delete"
+            onsubmit="return confirm('Delete the list {{ current.name }}?')">
+        <button class="btn danger" type="submit">Delete list</button>
+      </form>
+      {% endif %}
+    </div>
+
+    <p class="src {{ 'live' if batch.source == 'schwab' else 'delayed' }}">
+      {% if batch.source == 'schwab' %}● Schwab · real-time
+      {% elif batch.source %}⚠ Yahoo · delayed, one request per symbol
+      {% else %}no quotes{% endif %}
+      {% if batch.skipped %} · {{ batch.skipped }} not fetched (cap {{ batch.cap }}){% endif %}
+    </p>
+
+    <div class="tscroll">
+    <table>
+      <thead><tr>
+        <th>Symbol</th><th class="r">Last</th><th class="r">Change</th>
+        <th>Source</th>{% if not current.auto %}<th></th>{% endif %}
+      </tr></thead>
+      <tbody>
+      {% for s in current.symbols %}
+        {% set q = batch.quotes.get(s) %}
+        <tr>
+          <td><a class="sym" href="/symbol/{{ s }}">{{ s }}</a></td>
+          <td class="r fig">{{ '%.2f'|format(q.price) if q and q.price else '—' }}</td>
+          <td class="r fig {{ 'up' if q and q.change_pct and q.change_pct > 0 else ('down' if q and q.change_pct and q.change_pct < 0 else '') }}">
+            {{ '%+.2f%%'|format(q.change_pct) if q and q.change_pct is not none else '—' }}</td>
+          <td class="sub">{{ q.source_label if q else '—' }}</td>
+          {% if not current.auto %}
+          <td class="r">
+            <form method="post" action="/watchlists/{{ current.id }}/symbols/{{ s }}/delete">
+              <button class="btn danger" type="submit">remove</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+
+    {% if not current.symbols %}
+    <div class="empty">
+      <h2>{{ current.name }} is empty</h2>
+      <p class="muted">
+        {% if current.auto %}It fills in automatically once you have positions or imported trades.
+        {% else %}Add a symbol above — any US ticker works, plus ES and NQ futures.{% endif %}</p>
+    </div>
+    {% endif %}
+
+    {% if batch.degraded and current.symbols %}
+    <div class="banner warn" style="margin-top:14px">
+      Yahoo returns one symbol per request, so lists longer than {{ batch.cap }} are truncated and
+      every price is delayed. <a href="/settings">Linking Schwab</a> fetches the whole list in one
+      real-time call.
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+</div>
+{% endblock %}

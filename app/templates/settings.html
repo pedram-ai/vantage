@@ -1,40 +1,75 @@
 {% extends "base.html" %}
+{% block title %}Settings · Vantage{% endblock %}
 {% block content %}
+
 <div class="card">
   <h1>Settings</h1>
-  <form class="inline" method="post" action="/settings">
-    <label>Contract override (blank = auto roll):</label>
-    <input name="contract_override" placeholder="e.g. ESZ26" value="{{ s.contract_override or '' }}" style="width:110px">
-    <button type="submit">Save</button>
-  </form>
-  <p class="grey">Auto roll: front month, rolling ~8 days before the 3rd Friday of Mar/Jun/Sep/Dec.</p>
-</div>
-<div class="card">
-  <h2>Schwab — real-time price</h2>
-  <p class="grey">History stays on Yahoo. Schwab supplies only the live price,
-    which Yahoo delivers 10 minutes late.
-    {% if schwab.working %}<b style="color:#2e7d32">Connected{% if schwab.last_price %} — {{ schwab.symbol }} {{ '%.2f'|format(schwab.last_price) }}{% endif %}.</b>
-    {% elif schwab.linked %}<b style="color:#b26a00">Linked but not returning a quote — the 7-day token has probably expired; reconnect.</b>
-    {% elif schwab.configured %}<b style="color:#b26a00">App saved — not linked yet.</b>
-    {% else %}<b style="color:#b26a00">Not configured.</b>{% endif %}
-  </p>
-  <p class="grey">Register an app at <a href="https://developer.schwab.com" target="_blank">developer.schwab.com</a>
-    with this exact callback URL:<br><code>{{ redirect_uri }}</code></p>
-  <form class="inline" method="post" action="/settings/schwab">
-    <input name="app_key" placeholder="App key" style="width:230px" autocomplete="off">
-    <input name="app_secret" type="password" placeholder="App secret" style="width:180px" autocomplete="off">
-    <button type="submit">Save</button>
-  </form>
-  {% if schwab.configured %}
-  <p style="margin-top:8px"><a class="refresh" style="float:none" href="/schwab/connect">
-    {{ 'Reconnect' if schwab.linked else 'Connect' }} Schwab &rarr;</a></p>
-  <p class="grey">The refresh token expires every 7 days — reconnect weekly.
-    If it lapses, the map still builds and falls back to delayed Yahoo prices.</p>
-  {% endif %}
 </div>
 
 <div class="card">
-  <h2>Add calendar event</h2>
+  <h2>Schwab</h2>
+  <p class="muted">Real-time quotes for every symbol in one request. Yahoo stays as the history
+    source and the fallback.</p>
+  <p>
+    {% if schwab.working %}<span class="chip call">Connected</span>
+      {% if schwab.last_price %}<span class="muted">{{ schwab.symbol }}
+        {{ '%.2f'|format(schwab.last_price) }}</span>{% endif %}
+    {% elif schwab.linked %}<span class="chip wait">Linked, no quote</span>
+      <span class="muted">the 7-day token has probably expired — reconnect</span>
+    {% elif schwab.configured %}<span class="chip wait">App saved, not linked</span>
+    {% else %}<span class="chip off">Not configured</span>{% endif %}
+  </p>
+  <p class="faint">Register an app at <a href="https://developer.schwab.com" target="_blank"
+     rel="noopener">developer.schwab.com</a> with this exact callback URL:<br>
+    <span class="fig">{{ redirect_uri }}</span></p>
+  <form class="inline" method="post" action="/settings/schwab">
+    <input name="app_key" placeholder="App key" style="width:230px" autocomplete="off">
+    <input name="app_secret" type="password" placeholder="App secret" style="width:180px" autocomplete="off">
+    <button class="btn" type="submit">Save</button>
+  </form>
+  {% if schwab.configured %}
+  <p style="margin-top:10px"><a class="btn" href="/schwab/connect">
+    {{ 'Reconnect' if schwab.linked else 'Connect' }} Schwab &rarr;</a></p>
+  <p class="faint">The refresh token expires every 7 days. If it lapses the map still builds and
+    prices fall back to delayed Yahoo, labelled as such.</p>
+  {% endif %}
+</div>
+
+<div class="card" id="import">
+  <h2>Trade history</h2>
+  <p class="muted">Schwab's API only reaches back 60 days, so a CSV export is the only route to
+    your full history.</p>
+  <p class="faint">On schwab.com: <b>Accounts → History → Transactions</b>, one calendar year at a
+    time, then Export. ⚠ When an export exceeds Schwab's row cap it downloads
+    <b>empty instead of erroring</b> — Vantage rejects a zero-row file as a suspected truncation
+    rather than recording it as "no trades".</p>
+  {% if conn.coverage %}
+  <div class="tscroll"><table>
+    <thead><tr><th>Imported range</th><th class="r">Rows</th><th>When</th></tr></thead>
+    <tbody>{% for c in conn.coverage %}
+      <tr><td class="fig">{{ c.start }} → {{ c.end }}</td><td class="r fig">{{ c.rows }}</td>
+        <td class="sub">{{ c.imported_at }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <p class="faint">No imports yet.</p>
+  {% endif %}
+  <p class="faint">CSV upload lands here once you send me a sample file — the parser is built
+    against the real column layout rather than a guess.</p>
+</div>
+
+<div class="card">
+  <h2>Contract</h2>
+  <form class="inline" method="post" action="/settings">
+    <input name="contract_override" placeholder="auto" value="{{ s.contract_override or '' }}"
+           style="width:110px">
+    <button class="btn" type="submit">Save</button>
+  </form>
+  <p class="faint">Blank = auto roll, ~8 days before the 3rd Friday of Mar/Jun/Sep/Dec.</p>
+</div>
+
+<div class="card">
+  <h2>Calendar event</h2>
   <form class="inline" method="post" action="/settings/events">
     <input name="date" type="date" required>
     <select name="kind">
@@ -42,9 +77,16 @@
       <option value="jobs">Jobs Friday</option><option value="quarter_end">Quarter end</option>
       <option value="half_day">Half day</option>
     </select>
-    <input name="text" placeholder="custom text (optional)" style="width:280px">
-    <button type="submit">Add event</button>
+    <input name="text" placeholder="custom text (optional)" style="width:250px">
+    <button class="btn" type="submit">Add</button>
   </form>
-  <p class="grey">Quarterly/monthly opex and post-opex week are computed automatically.</p>
+  <p class="faint">Opex and post-opex week are computed automatically.</p>
 </div>
+
+<div class="card">
+  <h2>Author levels <span class="faint">ES only</span></h2>
+  <p class="faint">Tic Toc and Smashelito publish ES levels; other instruments use
+    profile-derived zones. <a href="/levels">Manage levels &rarr;</a></p>
+</div>
+
 {% endblock %}

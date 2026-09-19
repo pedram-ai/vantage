@@ -105,3 +105,42 @@ unattended job. It is still the right source for *portfolio positions* later. th
 has no public API; the TD Ameritrade API shut down 2024-05-10. Best bar source if we
 leave Yahoo: **Databento pay-as-you-go (~$0 against their $125 credit)**, which also has
 continuous-contract symbology that would replace `core/contracts.py` roll handling.
+
+
+---
+
+## Platform redesign (2026-09-19) — multi-instrument
+
+Vantage stopped being an ES email tool. Navigation is now
+**Today · Markets · Positions · Performance · Settings**.
+
+- ⛔ **`History` and `Levels` are no longer top-level.** History meant two unrelated things
+  (archived briefings vs the trading record); briefings live under Today, the record is
+  Performance. Levels is a property of an instrument, reachable from Settings.
+- **`core/instruments.py` is the registry.** Instruments are DATA: kind, session spec, bin
+  width, symbol mapping, whether author levels exist. `resolve()` never raises — an unknown
+  ticker is a US equity. Adding a symbol is a watchlist row, not a release.
+- ⚠ **Session windows are per-instrument.** Futures overnight = 18:00 prev day → 09:30;
+  equities have NO overnight, only a 04:00 pre-market. Applying the futures window to SPY
+  sweeps in the prior afternoon's post-market and calls it "overnight". Guarded in
+  `tests/test_instruments.py`.
+- ⚠ **Histogram bin width is per-instrument** (`_histogram(bars, bw)`). A fixed 1-point bin is
+  right for ES at 7,700 and collapses a $40 stock into 4 bins — measured in the tests.
+  `derive_bin()` scales with price (~0.05%, snapped).
+- **`core/symbol_view.py` replaces `run_builder` for the UI.** `run_builder` is still the
+  EMAIL path (ES-only) and is untouched — the email guard test still gates it.
+- **`core/watchlists.py`** — any number of lists. Two AUTO lists (`__held__`, `__traded__`)
+  are computed on read from the portfolio, never stored, so they cannot drift.
+- ⚠ **`core/quotes_batch.py` — Yahoo is one HTTP call PER SYMBOL.** A 20-symbol list is 20
+  calls and Yahoo already 429s this app, so the Yahoo path is capped at
+  `YAHOO_MAX_PER_REFRESH = 12` and skipped symbols render as "not fetched", never blank.
+  Schwab quotes the whole list in ONE request (`schwab.quotes([...])`) — which is why live
+  watchlists effectively require the Schwab link.
+- **`core/portfolio.py` returns EMPTY** until Schwab is linked or a CSV is imported. Positions
+  and Performance render explicit "not connected" states. ⛔ No placeholder numbers — a figure
+  on a P&L screen reads as a fact.
+
+### UI
+Soft rounded face (`ui-rounded` → SF Pro Rounded), **no monospace anywhere** — figures use
+`font-variant-numeric: tabular-nums` so columns align without the typewriter look. Palette is
+muted teal / sage / clay, not stoplight. Pedram asked for both explicitly.

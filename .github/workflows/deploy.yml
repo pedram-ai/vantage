@@ -28,6 +28,10 @@ jobs:
         run: python -m tests.test_regression
       - name: Email guard (no images/SVG/scripts, ES-only)
         run: python -m tests.test_email_guard
+      - name: Quote provenance (Schwab/Yahoo fallback)
+        run: python -m tests.test_quote_source
+      - name: Multi-instrument guards
+        run: python -m tests.test_instruments
 
   deploy:
     needs: test

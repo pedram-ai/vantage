@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Positions · Vantage{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>Positions</h1>
+  <p class="muted">What you hold now, and where each one sits against today's map.</p>
+</div>
+
+{% if not conn.ready %}
+<div class="card">
+  <div class="empty">
+    <h2>No position data yet</h2>
+    <p class="muted">Vantage shows nothing rather than a placeholder — a number here would look
+      like a fact.</p>
+    <p class="muted">Two things fill this page:</p>
+    <p><a class="btn" href="/settings">Link Schwab</a>
+       <a class="btn ghost" href="/settings#import">Import history CSV</a></p>
+    <p class="faint" style="margin-top:14px;max-width:52ch;margin-left:auto;margin-right:auto">
+      Schwab's API only reaches back 60 days, so the CSV export is the only route to your full
+      history. Both feed the same table and are matched on transaction id, so the overlap is
+      harmless.</p>
+  </div>
+</div>
+{% else %}
+
+<div class="card">
+  <div class="tiles">
+    <div class="tile"><div class="t">Open P&amp;L</div>
+      <div class="v fig {{ 'up' if totals.open_pnl > 0 else 'down' }}">{{ '%+,.0f'|format(totals.open_pnl) }}</div>
+      <div class="n">{{ positions|length }} position{{ '' if positions|length == 1 else 's' }}</div></div>
+    <div class="tile"><div class="t">Cost basis</div>
+      <div class="v fig">{{ '%,.0f'|format(totals.cost) }}</div><div class="n">capital deployed</div></div>
+    <div class="tile"><div class="t">Expiring ≤7d</div>
+      <div class="v fig">{{ totals.expiring }}</div><div class="n">decay accelerating</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="tscroll"><table>
+    <thead><tr><th>Position</th><th class="r">Qty</th><th class="r">Cost</th>
+      <th class="r">Mark</th><th class="r">Open P&amp;L</th><th>Against today's map</th></tr></thead>
+    <tbody>
+    {% for p in positions %}
+      <tr>
+        <td><a class="sym" href="/symbol/{{ p.symbol }}">{{ p.symbol }}</a>
+          <span class="sub">{{ p.description or p.kind }}</span></td>
+        <td class="r fig">{{ p.qty }}</td>
+        <td class="r fig">{{ '%.2f'|format(p.cost) if p.cost else '—' }}</td>
+        <td class="r fig">{{ '%.2f'|format(p.mark) if p.mark else '—' }}
+          {% if p.mark_estimated %}<span class="sub">est</span>{% endif %}</td>
+        <td class="r fig {{ 'up' if p.open_pnl and p.open_pnl > 0 else 'down' }}">
+          {{ '%+,.0f'|format(p.open_pnl) if p.open_pnl is not none else '—' }}</td>
+        <td class="sub">{{ p.zone_note or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="faint" style="margin-top:10px">Marks are broker values where available; otherwise a
+    model estimate, labelled <span class="sub">est</span>. A computed mark is never shown as fact.</p>
+</div>
+{% endif %}
+
+{% endblock %}

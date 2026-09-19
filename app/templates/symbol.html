@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{{ v.symbol }} · Vantage{% endblock %}
+{% block content %}
+
+{% if v.error %}
+<div class="card"><h1>{{ v.symbol }}</h1>
+  <div class="banner warn">{{ v.error }}</div></div>
+{% else %}
+{% set am = v.action_map %}
+
+<div class="card">
+  <div class="pills">
+    <a class="pill" href="/markets?list={{ list_id or '' }}">&larr; Watchlist</a>
+    {% for k, cfg in TIMEFRAMES.items() %}
+    <a class="pill {{ 'on' if tf == k }}" href="?tf={{ k }}">{{ cfg.label }}</a>
+    {% endfor %}
+    <a class="pill" style="margin-left:auto" href="?tf={{ tf }}&amp;refresh=1">&#8635; Refresh</a>
+  </div>
+
+  <h1>{{ v.symbol }} <span class="fig">{{ '%.2f'|format(v.price) }}</span>
+    <span class="fig {{ 'up' if v.change_pct and v.change_pct > 0 else 'down' }}" style="font-size:16px">
+      {{ '%+.2f%%'|format(v.change_pct) if v.change_pct is not none else '' }}</span>
+    {% if am %}
+    <span class="chip {{ 'call' if 'CALL' in am.verdict else ('put' if 'PUT' in am.verdict else 'wait') }}"
+          style="font-size:12.5px;vertical-align:middle">{{ am.verdict }}</span>
+    {% endif %}
+  </h1>
+  <p class="src {{ 'live' if v.quote.source == 'schwab' else 'delayed' }}">
+    {{ v.quote.source_label }} · {{ v.quote.age_text }}
+    <span class="faint">· {{ v.instrument.name or v.instrument.kind }}
+      {%- if v.instrument.kind == 'future' %} · {{ v.instrument.contract }}{% endif %}</span>
+  </p>
+  {% for e in v.events %}<div class="banner warn">{{ e.text }}</div>{% endfor %}
+  {% if v.chart_svg %}{{ v.chart_svg|safe }}{% endif %}
+</div>
+
+<div class="cols">
+  <div class="card">
+    <h2>Action map</h2>
+    {% if am %}
+      {% set z = am.zones %}
+      {% if z.breakout %}<div class="zone call">
+        <div class="t">▲ Call · breakout{{ ' · low odds' if z.breakout.low_odds }}</div>
+        Hold above {{ '%.2f'|format(z.breakout.above) }} 15m
+        <span class="s">· T {{ z.breakout.targets|join(' / ') or '—' }} · stop {{ z.breakout.stop }}</span>
+      </div>{% endif %}
+      {% if z.fade %}<div class="zone put">
+        <div class="t">▼ Put · fade{{ ' · preferred' if z.fade.preferred }}</div>
+        {{ '%.2f'|format(z.fade.band.lo) }}–{{ '%.2f'|format(z.fade.band.hi) }} rejects
+        <span class="s">· T {{ z.fade.targets|join(' / ') or '—' }} · stop {{ z.fade.stop }}</span>
+      </div>{% endif %}
+      {% if z.dip %}<div class="zone call">
+        <div class="t">▲ Call · dip{{ ' · preferred' if z.dip.preferred }}</div>
+        {{ '%.2f'|format(z.dip.band.lo) }}–{{ '%.2f'|format(z.dip.band.hi) }} holds
+        <span class="s">· T {{ z.dip.targets|join(' / ') or '—' }} · stop {{ z.dip.stop }}</span>
+      </div>{% endif %}
+      {% if z.breakdown %}<div class="zone put">
+        <div class="t">▼ Put · breakdown{{ ' · low odds' if z.breakdown.low_odds }}</div>
+        Hold below {{ '%.2f'|format(z.breakdown.below) }} 15m
+        <span class="s">· T {{ z.breakdown.targets|join(' / ') or '—' }} · stop {{ z.breakdown.stop }}</span>
+      </div>{% endif %}
+      <p class="faint" style="margin-top:10px">
+        Open type {{ am.open_type.code }}
+        {%- if v.instrument.has_author_levels %}
+          {%- if v.author_levels %} · {{ v.author_levels|length }} author level(s)
+          {%- else %} · profile only, no author levels entered
+            (<a href="/levels">add</a>){% endif %}
+        {%- else %} · profile-derived zones; no published author levels for {{ v.symbol }}{% endif %}
+      </p>
+    {% else %}<p class="muted">Not enough session data for a map.</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Level map <span class="faint">3 sessions · {{ v.ladder_bin }}-wide bins</span></h2>
+    <table class="ladder">
+      {% for r in v.ladder %}
+      <tr class="{{ 'price-row' if r.is_price }}">
+        <td class="px {{ 'b' if r.labels or r.is_price }}">{{ '%.2f'|format(r.price) }}</td>
+        <td style="width:200px"><span class="bar {{ 'poc' if r.is_poc else ('inval' if r.in_value) }}"
+            style="width:{{ [r.pct, 2]|max }}%"></span></td>
+        <td class="lbl">{% if r.is_price %}&larr; now{% endif %}
+          {{ r.labels|join(' · ') }}{% if r.is_poc %} <b>POC</b>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Session prints</h2>
+  <div class="tscroll"><table>
+    <tr><th>Session</th>
+      {% for h in ['Open','High','Low','Close','POC','VAH','VAL','VWAP'] %}<th class="r">{{ h }}</th>{% endfor %}</tr>
+    {% for s in v.sessions.rth|reverse %}
+    <tr><td>{{ s.label }}</td>
+      {% for k in ['open','high','low','close','poc','vah','val','vwap'] %}
+      <td class="r fig">{{ '%.2f'|format(s[k]) }}</td>{% endfor %}</tr>
+    {% endfor %}
+    {% if v.sessions.overnight %}{% set s = v.sessions.overnight %}
+    <tr><td>{{ s.label }}</td>
+      {% for k in ['open','high','low','close','poc','vah','val','vwap'] %}
+      <td class="r fig">{{ '%.2f'|format(s[k]) }}</td>{% endfor %}</tr>
+    {% endif %}
+  </table></div>
+</div>
+{% endif %}
+{% endblock %}

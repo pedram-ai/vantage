@@ -1,81 +1,60 @@
 {% extends "base.html" %}
-{% import "_parts.html" as parts %}
+{% block title %}Today · Vantage{% endblock %}
 {% block content %}
 
-{% for err in run.errors %}
-<div class="eventbox" style="background:#ffebee;border-left-color:#c62828">Source failed: {{ err }}</div>
-{% endfor %}
-
-{% if run.es %}
-{% set es = run.es %}
-{% set am = es.action_map %}
 <div class="card">
-  <h1>ES {{ '%.2f'|format(es.price) }}
-    <span class="grey">{{ parts.t('Contract', es.contract) }} · {{ run.generated_at_pt }}</span>
-    {% if am %}
-    <span class="badge {{ 'notrade' if am.zone_state=='none' else ('call' if 'CALL' in am.verdict else ('put' if 'PUT' in am.verdict else 'aside')) }}">{{ am.verdict }}</span>
-    {% endif %}
-    <a class="refresh" href="?tf={{ tf }}">&#8635; Refresh</a>
-  </h1>
-  {% if es.quote %}
-  <p class="src {{ 'live' if es.quote.source=='schwab' else 'delayed' }}">
-    {{ es.quote.source_label }} · {{ es.quote.age_text }}
-    {% if es.quote.source=='yahoo' and es.quote.market_open %}
-    — <a href="/settings">link Schwab for real-time</a>
-    {% endif %}
+  <h1>Today</h1>
+  <p class="muted">{{ brief.generated_at_pt }} · {{ brief.rows|length }} instrument{{ '' if brief.rows|length == 1 else 's' }}
+    from <a href="/markets?list={{ list_id or '' }}">{{ list_name }}</a>
+    <a class="pill" style="margin-left:8px" href="?list={{ list_id or '' }}&amp;refresh=1">&#8635; Refresh</a>
   </p>
+  {% for e in brief.events %}
+  <div class="banner warn" style="margin-top:10px">{{ e.text }}</div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="tscroll">
+  <table>
+    <thead><tr>
+      <th>Instrument</th><th>Verdict</th><th>Nearest zone</th>
+      <th class="r">Last</th><th class="r">Day</th><th>Source</th>
+    </tr></thead>
+    <tbody>
+    {% for r in brief.rows %}
+      <tr>
+        <td>
+          <a class="sym" href="/symbol/{{ r.symbol }}">{{ r.symbol }}</a>
+          <span class="sub">{{ r.instrument.contract if r.instrument.kind == 'future' else r.instrument.name or r.instrument.kind }}</span>
+        </td>
+        <td>
+          {% if r.error %}<span class="chip off">unavailable</span>
+          {% elif r.verdict %}
+            <span class="chip {{ 'call' if 'CALL' in r.verdict else ('put' if 'PUT' in r.verdict else 'wait') }}">
+              {{ r.verdict.split(' - ')[0]|replace('IN ','')|title }}</span>
+          {% else %}<span class="chip off">no map</span>{% endif %}
+        </td>
+        <td class="sub">{{ r.near or ('—' if not r.error else r.error) }}</td>
+        <td class="r fig">{{ '%.2f'|format(r.price) if r.price else '—' }}</td>
+        <td class="r fig {{ 'up' if r.change_pct and r.change_pct > 0 else ('down' if r.change_pct and r.change_pct < 0 else '') }}">
+          {{ '%+.2f%%'|format(r.change_pct) if r.change_pct is not none else '—' }}</td>
+        <td class="sub">{{ r.quote.source_label if r.quote else '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if not brief.rows %}
+  <div class="empty"><h2>No symbols yet</h2>
+    <p class="muted">Add some to a watchlist and they'll appear here each morning.</p>
+    <p><a class="btn" href="/markets">Go to Markets</a></p></div>
   {% endif %}
-  {% if am %}
-  <p>
-    {% if am.distances.put_zone_above %}<span class="down">&#9660; PUT {{ '%.2f'|format(am.distances.put_zone_above.pts) }} pts up ({{ am.distances.put_zone_above.range[0] }}–{{ am.distances.put_zone_above.range[1] }})</span>{% endif %}
-    {% if am.distances.call_zone_below %}<span class="up" style="margin-left:14px">&#9650; CALL {{ '%.2f'|format(am.distances.call_zone_below.pts) }} pts down ({{ am.distances.call_zone_below.range[0] }}–{{ am.distances.call_zone_below.range[1] }})</span>{% endif %}
-  </p>
-  <p class="grey">{{ parts.t('Open type') }}: <abbr title="{{ am.open_type.text }}">{{ am.open_type.code }}</abbr></p>
-  {% for e in es.events %}<div class="eventbox">{{ e.text }}</div>{% endfor %}
-  {% for n in am.notes %}<p class="grey">&#9432; {{ n }}</p>{% endfor %}
-  {% endif %}
 </div>
 
-<div class="card">
-  <h2>ES chart {{ parts.tf_switch(tf) }}</h2>
-  {{ es.chart_svg|safe }}
-</div>
-
-<div class="cols">
-  <div class="card">
-    <h2>Action Map</h2>
-    {% if am %}{{ parts.zone_cards(am) }}
-    {% if not es.author_levels %}<p class="grey">Profile-only — <a href="/levels">add author levels</a>.</p>{% endif %}
-    {% else %}<p class="grey">Not enough session data.</p>{% endif %}
-  </div>
-  <div class="card">
-    <h2>ES Level Map <span class="grey">3-session, 5-pt bins</span></h2>
-    {{ parts.ladder(es.ladder) }}
-  </div>
-</div>
-
-<div class="card">
-  <h2>ES session prints</h2>
-  {{ parts.session_table(es.sessions) }}
-</div>
-{% endif %}
-
-{% if run.spy %}
-{% set spy = run.spy %}
-<div class="card">
-  <h2>SPY {{ '%.2f'|format(spy.price) }} — chart {{ parts.tf_switch(tf) }}</h2>
-  {% if spy.quote %}<p class="src delayed">{{ spy.quote.source_label }} · {{ spy.quote.age_text }}</p>{% endif %}
-  {{ spy.chart_svg|safe }}
-</div>
-<div class="cols">
-  <div class="card">
-    <h2>SPY session prints</h2>
-    {{ parts.session_table(spy.sessions) }}
-  </div>
-  <div class="card">
-    <h2>SPY Level Map <span class="grey">3-session, 1-pt bins</span></h2>
-    {{ parts.ladder(spy.ladder) }}
-  </div>
+{% if degraded %}
+<div class="banner warn">
+  Prices are delayed. <a href="/settings">Link Schwab</a> for real-time quotes across the whole list
+  in one request — Yahoo fetches one symbol per call and rate-limits beyond {{ cap }}.
 </div>
 {% endif %}
 

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Performance · Vantage{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>Performance</h1>
+  <div class="pills" style="margin-top:12px">
+    <span class="plab">Current</span>
+    {% for k, label, group in PERIODS if group == 'current' %}
+    <a class="pill {{ 'on' if perf.period == k }}" href="?period={{ k }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <div class="pills">
+    <span class="plab">Prior</span>
+    {% for k, label, group in PERIODS if group == 'prior' %}
+    <a class="pill {{ 'on' if perf.period == k }}" href="?period={{ k }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if perf.empty %}
+<div class="card"><div class="empty">
+  <h2>Nothing to measure yet</h2>
+  <p class="muted">No trades have been imported or synced, so there is no P&amp;L to report.
+    Vantage leaves this blank rather than showing a zero — they are different claims.</p>
+  <p><a class="btn" href="/settings">Link Schwab</a>
+     <a class="btn ghost" href="/settings#import">Import history CSV</a></p>
+</div></div>
+{% else %}
+
+<div class="card">
+  <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-end">
+    <div>
+      <div class="fig {{ 'up' if perf.total > 0 else 'down' }}"
+           style="font-size:42px;font-weight:680;letter-spacing:-1.4px;line-height:1">
+        {{ '%+,.0f'|format(perf.total) }}</div>
+      <div class="muted" style="margin-top:6px">{{ perf.label }} ·
+        {{ perf.n_trades }} trade{{ '' if perf.n_trades == 1 else 's' }}</div>
+    </div>
+    <div style="display:flex;gap:26px">
+      <div><h3 style="margin:0">Realized</h3>
+        <div class="fig {{ 'up' if perf.realized > 0 else 'down' }}" style="font-size:19px;font-weight:620">
+          {{ '%+,.0f'|format(perf.realized) }}</div></div>
+      <div><h3 style="margin:0">Open</h3>
+        <div class="fig {{ 'up' if perf.open_pnl > 0 else 'down' }}" style="font-size:19px;font-weight:620">
+          {{ '%+,.0f'|format(perf.open_pnl) }}</div></div>
+      <div><h3 style="margin:0">Fees</h3>
+        <div class="fig" style="font-size:19px;font-weight:620">{{ '%-,.0f'|format(perf.fees) }}</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="tiles">
+    <div class="tile"><div class="t">Win rate</div>
+      <div class="v fig">{{ perf.win_rate ~ '%' if perf.win_rate is not none else '—' }}</div></div>
+    <div class="tile"><div class="t">Avg win</div>
+      <div class="v fig up">{{ '%+,.0f'|format(perf.avg_win) if perf.avg_win else '—' }}</div></div>
+    <div class="tile"><div class="t">Avg loss</div>
+      <div class="v fig down">{{ '%+,.0f'|format(perf.avg_loss) if perf.avg_loss else '—' }}</div></div>
+  </div>
+</div>
+
+<div class="cols">
+  <div class="card">
+    <h2>By instrument</h2>
+    <div class="tscroll"><table>
+      <thead><tr><th>Symbol</th><th class="r">Trades</th><th class="r">Win rate</th><th class="r">Net</th></tr></thead>
+      <tbody>{% for r in perf.by_symbol %}
+        <tr><td><a class="sym" href="/symbol/{{ r.key }}">{{ r.key }}</a></td>
+          <td class="r fig">{{ r.n }}</td><td class="r fig">{{ r.win_rate }}%</td>
+          <td class="r fig {{ 'up' if r.pnl > 0 else 'down' }}">{{ '%+,.0f'|format(r.pnl) }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h2>By setup <span class="faint">which zone it was taken on</span></h2>
+    <div class="tscroll"><table>
+      <thead><tr><th>Zone</th><th class="r">Trades</th><th class="r">Win rate</th><th class="r">Net</th></tr></thead>
+      <tbody>{% for r in perf.by_zone %}
+        <tr><td>{{ r.key }}</td><td class="r fig">{{ r.n }}</td>
+          <td class="r fig">{{ r.win_rate }}%</td>
+          <td class="r fig {{ 'up' if r.pnl > 0 else 'down' }}">{{ '%+,.0f'|format(r.pnl) }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Trades</h2>
+  <div class="tscroll"><table>
+    <thead><tr><th>Closed</th><th>Position</th><th>Zone</th><th class="r">Qty</th>
+      <th class="r">P&amp;L</th></tr></thead>
+    <tbody>{% for t in perf.trades %}
+      <tr><td class="fig">{{ t.closed_on }}</td>
+        <td><a class="sym" href="/symbol/{{ t.symbol }}">{{ t.symbol }}</a>
+          <span class="sub">{{ t.description or '' }}</span></td>
+        <td class="sub">{{ t.zone or '—' }}</td>
+        <td class="r fig">{{ t.qty }}</td>
+        <td class="r fig {{ 'up' if t.pnl > 0 else 'down' }}">{{ '%+,.0f'|format(t.pnl) }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+
+<p class="faint">Deposits and withdrawals are never counted as profit — period figures are built
+from trades, not from the change in account value.</p>
+
+{% endblock %}
