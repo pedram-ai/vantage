@@ -1,8 +1,10 @@
-# Vantage — ES/SPY action-map platform
+# Vantage — multi-instrument trading platform
 
-Staff-only web platform per `VANTAGE_HANDOFF.md` (copy in `docs/`). Computes daily
-ES (front-month) and SPY session profiles (POC/VAH/VAL/VWAP/session prints), builds
-the zone Action Map from profile + author levels, archives a run every weekday.
+Single-user platform (IAP, pedram@patexia.com only). Session profiles
+(POC/VAH/VAL/VWAP), zone action maps and watchlists for **any instrument** — ES and NQ
+futures, ETFs, stocks — plus a weekday ES briefing email. Originated from
+`VANTAGE_HANDOFF.md` (copy in `docs/`), which describes the ES-only ancestor; read the
+2026-09-19 redesign section at the bottom for what it is now.
 
 ## Live infrastructure (GCP project `patexia-vantage`, us-central1)
 
@@ -32,10 +34,11 @@ then update the job image:
 - The profile weight in `core/zones.py` (`PROFILE_WEIGHT=1.5`) is deliberate —
   §11's lesson: the profile-derived dip band beat the author band on 2026-09-18.
 
-## Not built yet (handoff M2+)
+## Not built yet
 
-Push notification, Substack/X scrapers + LLM level extraction, portfolio module,
-history scorecard. Author levels are entered manually at `/levels` for now.
+Push notification, Substack/X scrapers + LLM level extraction, **CSV trade import**
+(parser waits on a real Schwab export — see `docs/DATA-SOURCES.md`), Schwab positions
+sync, history scorecard. Author levels are entered manually at `/levels` for now.
 The Claude scheduled task `Daily ES Action Map` still runs in parallel — retire it
 once Vantage's email has run clean for two weeks (handoff §9 M6).
 
@@ -72,18 +75,9 @@ secret name"). No credential was copied; there is still one key.
 
 ## Repo / CI (added 2026-09-18)
 
-⚠ **NOT PUSHED YET (as of 2026-09-18).** The repo `pedram-ai/vantage` **does not exist**
-(`git ls-remote` → "Repository not found") and there is no `origin`. All commits are
-local only. Deploys to date were `gcloud run deploy --source .` from this directory.
-
-SSH **does** authenticate as `pedram-ai` (`ssh -T git@github.com`), but SSH cannot
-*create* a repo — that needs an API token, i.e. `gh auth login` (device flow, needs
-Pedram) or a PAT. Two device codes expired unused on 2026-09-18.
-
-**Fastest path:** Pedram creates an empty private repo named `vantage` at
-https://github.com/new (no README/.gitignore), then:
-`git remote add origin git@github.com:pedram-ai/vantage.git && git push -u origin main`
-— no token needed, SSH already works. Or run `bash setup-github.sh` for the gh flow.
+Repo: **https://github.com/pedram-ai/vantage** (private). Pushed 2026-09-19 after Pedram
+created the empty repo — SSH authenticates as `pedram-ai`; `gh` was never authenticated
+(two device codes expired), and SSH alone cannot CREATE a repo, only push to one.
 
 `.github/workflows/deploy.yml` deploys on push to `main` via **Workload Identity
 Federation — no service-account key exists.** Pool `github` / provider
@@ -99,7 +93,9 @@ gates the deploy on two tests and then repoints the daily job at the new image.
 
 ## Market data (added 2026-09-18)
 
-See `docs/DATA-SOURCES.md`. Headline: **Schwab's API cannot supply ES price history**
+See `docs/DATA-SOURCES.md`. ⚠ The headline below is about HISTORY only — Schwab **is** a
+real-time quote source and is now wired in (`core/schwab.py`). Headline:
+**Schwab's API cannot supply ES price history**
 (equities/ETFs only) and its **refresh token dies every 7 days** — unusable for the
 unattended job. It is still the right source for *portfolio positions* later. thinkorswim
 has no public API; the TD Ameritrade API shut down 2024-05-10. Best bar source if we
