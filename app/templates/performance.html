@@ -54,8 +54,8 @@
   <h2>Nothing to measure yet</h2>
   <p class="muted">No trades have been imported or synced, so there is no P&amp;L to report.
     Argent Ridge leaves this blank rather than showing a zero — they are different claims.</p>
-  <p><a class="btn" href="/settings">Link Schwab</a>
-     <a class="btn ghost" href="/settings#import">Import history CSV</a></p>
+  <p><a class="btn" href="/admin/sources">Link Schwab</a>
+     <a class="btn ghost" href="/admin/sources#import">Import history CSV</a></p>
 </div></div>
 {% else %}
 
@@ -81,23 +81,6 @@
   </div>
 </div>
 
-{% if ai and ai.ok %}
-<div class="card">
-  <h2>What the numbers show <span class="faint">AI review of the figures below</span></h2>
-  <p style="font-size:15px;font-weight:600;margin-bottom:12px">{{ ai.headline }}</p>
-  {% for o in ai.observations %}
-  <div style="border-left:3px solid {{ '#2f9e8f' if o.tone=='good' else ('#c0563f' if o.tone=='bad' else 'var(--line)') }};
-              padding:2px 0 2px 13px;margin-bottom:12px">
-    <b style="font-family:var(--soft);font-size:13.5px">{{ o.title }}</b>
-    <div class="muted" style="font-size:13.5px">{{ o.detail }}</div>
-    <div class="faint">from: {{ o.figure }}</div>
-  </div>
-  {% endfor %}
-  <p class="faint">Written by {{ ai.model }} from the aggregate figures on this page — it is
-    given no individual trades, and each point cites the figure it rests on.
-    Informational, not advice.</p>
-</div>
-{% endif %}
 
 <div class="card">
   <h2>Cumulative realized P&amp;L <span class="faint">{{ perf.label }} · running total across
@@ -193,11 +176,11 @@
     <a class="pill" href="?period={{ perf.period }}&amp;page={{ perf.page - 1 }}">&larr; Prev</a>
     {% endif %}
     {% for n in range(1, perf.pages + 1) %}
-      {% if n <= 2 or n > perf.pages - 2 or (n >= perf.page - 1 and n <= perf.page + 1) %}
+      {% if n <= 3 or n > perf.pages - 3 or (n >= perf.page - 4 and n <= perf.page + 4) %}
       <a class="pill {{ 'on' if n == perf.page }}"
          href="?period={{ perf.period }}&amp;page={{ n }}">{{ n }}</a>
-      {% elif n == 3 and perf.page > 4 %}<span class="faint">…</span>
-      {% elif n == perf.pages - 2 and perf.page < perf.pages - 3 %}<span class="faint">…</span>
+      {% elif n == 4 and perf.page > 8 %}<span class="faint">…</span>
+      {% elif n == perf.pages - 3 and perf.page < perf.pages - 7 %}<span class="faint">…</span>
       {% endif %}
     {% endfor %}
     {% if perf.page < perf.pages %}

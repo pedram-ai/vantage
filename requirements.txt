@@ -5,4 +5,3 @@ curl_cffi==0.*
 python-multipart==0.0.*
 google-cloud-firestore==2.*
 google-cloud-secret-manager==2.*
-anthropic==0.*

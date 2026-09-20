@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Profile · Argent Ridge{% endblock %}
+{% block content %}
+
+{% if err %}<div class="card bad"><b>{{ err }}</b></div>{% endif %}
+{% if saved %}<div class="card good"><b>Saved.</b></div>{% endif %}
+{% if pw %}<div class="card good"><b>Password changed.</b>
+  <span class="muted">Every other signed-in session was ended.</span></div>{% endif %}
+
+<div class="card">
+  <h1>Profile</h1>
+  <p class="muted">{{ u.email }}</p>
+</div>
+
+<div class="cols">
+  <div class="card">
+    <h2>Basic information</h2>
+    <form method="post" action="/profile">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="fld"><span>Name</span>
+        <input name="name" value="{{ u.name or '' }}" maxlength="80" required></label>
+      <button class="btn" type="submit">Save</button>
+    </form>
+    <table class="kv">
+      <tr><td>Email</td><td>{{ u.email }}</td></tr>
+      <tr><td>Role</td><td><span class="chip">{{ u.role }}</span></td></tr>
+      <tr><td>Account created</td><td>{{ (u.created_at or '—')[:10] }}</td></tr>
+      <tr><td>Last sign-in</td><td>{{ (u.last_login or '—')[:16].replace('T', ' ') }}</td></tr>
+    </table>
+    {# Email and role are deliberately read-only: a user who could edit their
+       own role could promote themselves to owner. #}
+    <p class="faint">Email and role are set in the admin console.</p>
+  </div>
+
+  <div class="card">
+    <h2>Change password</h2>
+    <form method="post" action="/profile/password">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="fld"><span>Current password</span>
+        <input name="current" type="password" autocomplete="current-password" required></label>
+      <label class="fld"><span>New password</span>
+        <input name="new" type="password" autocomplete="new-password" minlength="12" required></label>
+      <label class="fld"><span>Repeat new password</span>
+        <input name="confirm" type="password" autocomplete="new-password" minlength="12" required></label>
+      <button class="btn" type="submit">Change password</button>
+    </form>
+    <p class="faint">At least 12 characters. Changing it signs out every other
+      device; this one stays signed in.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Signed in <span class="faint">{{ sessions|length }} active
+    session{{ '' if sessions|length == 1 else 's' }}</span></h2>
+  <div class="tscroll"><table><thead><tr>
+    <th>Started</th><th>Expires</th><th>From</th><th>Device</th></tr></thead><tbody>
+    {% for s in sessions %}
+    <tr>
+      <td>{{ (s.created_at or '—')[:16].replace('T', ' ') }}</td>
+      <td>{{ (s.expires_at or '—')[:10] }}</td>
+      <td class="faint">{{ s.ip or '—' }}</td>
+      <td class="faint">{{ s.ua or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+</div>
+{% endblock %}

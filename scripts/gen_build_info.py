@@ -14,6 +14,7 @@ instead of rendering an empty history that looks like "no changes".
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -32,12 +33,22 @@ def git(*args: str) -> str | None:
 
 def main() -> int:
     head = git("rev-parse", "HEAD")
+    # The version + deploy stamp the footer renders. bump_version owns the
+    # number; this file only carries it into the image.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        from bump_version import deploy_stamp
+        stamp = deploy_stamp()
+    except Exception:  # noqa: BLE001
+        stamp = {}
     info = {
         "available": bool(head),
         "commit": head or None,
         "short": (head or "")[:8] or None,
         "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
         "built_at": datetime.now(timezone.utc).isoformat(),
+        "version": stamp.get("version"),
+        "deployed_at": stamp.get("deployed_at"),
         "commits": [],
     }
 

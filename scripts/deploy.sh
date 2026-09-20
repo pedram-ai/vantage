@@ -3,6 +3,9 @@
 # Documentation always matches what shipped.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# ⛔ BUMP FIRST, THEN BAKE. gen_build_info reads VERSION, so a bump after it
+# ships the PREVIOUS number and the footer claims a build that is not live.
+python3 scripts/bump_version.py
 python3 scripts/gen_build_info.py app/build_info.json
 gcloud run deploy vantage --source . --project=patexia-vantage --region=us-central1 \
   --no-allow-unauthenticated --min-instances=1 \

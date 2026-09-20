@@ -1,9 +1,10 @@
-{% extends "base.html" %}
-{% block title %}Settings · Argent Ridge{% endblock %}
-{% block content %}
+{% extends "admin_base.html" %}
+{% block title %}Data sources · Argent Ridge{% endblock %}
+{% block admin %}
 
 <div class="card">
-  <h1>Settings</h1>
+  <h1>Data sources</h1>
+  <p class="muted">How market data and trades get into Argent Ridge.</p>
 </div>
 
 <div class="card">
@@ -25,7 +26,7 @@
     <span class="fig" style="user-select:all">{{ redirect_uri }}</span><br>
     Approval takes 1–3 days. ⚠ Status <b>Approved - Pending</b> is not usable yet; wait for
     <b>Ready For Use</b>.</p>
-  <form class="inline" method="post" action="/settings/schwab">
+  <form class="inline" method="post" action="/admin/sources/schwab">
     <input name="app_key" placeholder="App key" style="width:230px" autocomplete="off">
     <input name="app_secret" type="password" placeholder="App secret" style="width:180px" autocomplete="off">
     <button class="btn" type="submit">Save</button>
@@ -38,20 +39,6 @@
   {% endif %}
 </div>
 
-<div class="card">
-  <h2>AI review</h2>
-  <p class="muted">Claude reads the aggregate figures on the Performance page and writes
-    observations. It never sees individual trades.</p>
-  <p>{% if ai.configured %}<span class="chip call">Key configured</span>
-     {% else %}<span class="chip off">No key</span>{% endif %}</p>
-  <form class="inline" method="post" action="/settings/ai">
-    <input name="api_key" type="password" placeholder="Anthropic API key" style="width:280px"
-           autocomplete="off">
-    <button class="btn" type="submit">Save</button>
-  </form>
-  <p class="faint">From console.anthropic.com → API keys. Stored in Secret Manager, never
-    displayed again. Overrides the shared LexDana key.</p>
-</div>
 
 <div class="card" id="import">
   <h2>Trade history</h2>
@@ -78,7 +65,7 @@
 
 <div class="card">
   <h2>Contract</h2>
-  <form class="inline" method="post" action="/settings">
+  <form class="inline" method="post" action="/admin/sources">
     <input name="contract_override" placeholder="auto" value="{{ s.contract_override or '' }}"
            style="width:110px">
     <button class="btn" type="submit">Save</button>
@@ -88,7 +75,7 @@
 
 <div class="card">
   <h2>Calendar event</h2>
-  <form class="inline" method="post" action="/settings/events">
+  <form class="inline" method="post" action="/admin/sources/events">
     <input name="date" type="date" required>
     <select name="kind">
       <option value="fomc">FOMC</option><option value="cpi">CPI</option>

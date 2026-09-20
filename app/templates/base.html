@@ -46,7 +46,46 @@ nav a{font-family:var(--soft);font-size:13.5px;font-weight:550;color:#b8c6d4;
 nav a.on{background:var(--paper);color:var(--ink);}
 nav a:hover:not(.on){color:#fff;}
 
-main{max-width:1120px;margin:20px auto;padding:0 20px 60px;}
+main{max-width:1120px;margin:20px auto;padding:0 20px 24px;}
+/* Build stamp. Deliberately quiet — it is a reference you go looking for when
+   you ask "did my fix ship?", not something to read on every page. */
+.sitefoot{max-width:1120px;margin:0 auto;padding:14px 20px 40px;
+  font-family:var(--soft);font-size:11.5px;color:var(--faint);
+  border-top:1px solid var(--line);display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
+.sitefoot .ver{font-weight:650;color:var(--muted);font-variant-numeric:tabular-nums;}
+.sitefoot .sep{opacity:.45;}
+/* Form rows + key/value tables + inline result banners. */
+.fld{display:block;margin-bottom:11px;}
+.fld>span{display:block;font-family:var(--soft);font-size:12px;font-weight:600;
+  color:var(--muted);margin-bottom:4px;}
+.fld>input{width:100%;max-width:330px;}
+.kv{margin-top:16px;width:auto;}
+.kv td{padding:5px 0;border:0;font-size:13.5px;}
+.kv td:first-child{color:var(--muted);padding-right:22px;white-space:nowrap;}
+.card.good{border-left:3px solid var(--up);}
+.card.bad{border-left:3px solid var(--down);}
+/* Admin shell — grouped left rail, LC's AdminLayout shape in plain HTML. */
+.adminwrap{display:flex;gap:26px;align-items:flex-start;}
+.adminrail{flex:0 0 194px;position:sticky;top:18px;}
+.adminmain{min-width:0;flex:1;}
+.raileyebrow{display:block;font-family:var(--soft);font-size:11px;font-weight:700;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+  padding:6px 11px 8px;text-decoration:none;}
+.raileyebrow:hover,.raileyebrow.on{color:var(--muted);}
+.railgroup{margin-bottom:15px;}
+.raillabel{font-family:var(--soft);font-size:10.5px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint);opacity:.8;padding:0 11px 5px;}
+.railitem{display:block;font-family:var(--soft);font-size:13.5px;font-weight:550;
+  color:var(--muted);text-decoration:none;padding:7px 11px;border-radius:9px;
+  margin-bottom:1px;}
+.railitem:hover{background:var(--line-soft);color:var(--ink);}
+.railitem.on{background:var(--accent);color:#fff;}
+@media(max-width:760px){
+  .adminwrap{flex-direction:column;gap:14px;}
+  .adminrail{position:static;flex:none;width:100%;display:flex;flex-wrap:wrap;gap:6px;}
+  .railgroup{margin:0;display:flex;gap:4px;align-items:center;}
+  .raillabel{padding:0 4px 0 0;}
+}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
       padding:18px 20px;margin-bottom:16px;}
 h1{font-family:var(--soft);font-size:25px;font-weight:660;letter-spacing:-.5px;margin:0 0 4px;}
@@ -177,7 +216,7 @@ abbr{text-decoration:underline dotted rgba(140,155,170,.7);cursor:help;text-unde
           <span>{{ me.email }}</span>
           <span class="avrole">{{ me.role }}</span>
         </div>
-        <a href="/settings">Settings</a>
+        <a href="/profile">Profile</a>
         {% if me.role == 'owner' %}<a href="/admin">Admin console</a>{% endif %}
         <a href="/logout" class="avout">Sign out</a>
       </div>
@@ -189,12 +228,22 @@ abbr{text-decoration:underline dotted rgba(140,155,170,.7);cursor:help;text-unde
     <a href="/markets" class="{{ 'on' if page=='markets' }}">Markets</a>
     <a href="/positions" class="{{ 'on' if page=='positions' }}">Positions</a>
     <a href="/performance" class="{{ 'on' if page=='performance' }}">Performance</a>
-    <a href="/settings" class="{{ 'on' if page=='settings' }}">Settings</a>
   </nav>
 </header>
 <main>
 {% block content %}{% endblock %}
 <p class="faint">Built from published author levels and public price data; informational, not personalized investment advice.</p>
 </main>
+<footer class="sitefoot">
+  {% if build_footer.dev %}
+  <span title="Running from a checkout — scripts/deploy.sh stamps the version">dev build</span>
+  {% else %}
+  <span class="ver">{{ build_footer.version }}</span>
+  <span class="sep">·</span>
+  <span>deployed {{ build_footer.deployed }}</span>
+  {% if build_footer.commit %}<span class="sep">·</span>
+  <span class="faint">{{ build_footer.commit }}</span>{% endif %}
+  {% endif %}
+</footer>
 </body>
 </html>

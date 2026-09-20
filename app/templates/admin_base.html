@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{#
+  Admin shell — grouped left rail + content area.
+
+  Method copied from Lateral Compass (`web/components/AdminLayout.tsx`): the same
+  grouped sections (DATA / ACCESS / SYSTEM) and the same longest-prefix active
+  rule, so "/admin" doesn't also light up on every sub-page. LC's version is a
+  React client component with a collapse toggle in localStorage; this one is
+  server-rendered and does not collapse — there are six items, not fourteen, and
+  a toggle that saves nothing would be decoration.
+#}
+{% set ADMIN_NAV = [
+  ("Data", [
+    ("/admin/sources", "Data sources", "Broker link, trade import, contract"),
+  ]),
+  ("Access", [
+    ("/users", "Users", "Who can sign in"),
+  ]),
+  ("System", [
+    ("/admin/health", "System health", "Servers, data, cost"),
+    ("/admin/docs", "Documentation", "Every change, per commit"),
+  ]),
+] %}
+{% block content %}
+<div class="adminwrap">
+  <aside class="adminrail">
+    <a href="/admin" class="raileyebrow {{ 'on' if admin_page == 'overview' }}">Admin console</a>
+    {% for group, items in ADMIN_NAV %}
+    <div class="railgroup">
+      <div class="raillabel">{{ group }}</div>
+      {% for href, label, hint in items %}
+      <a href="{{ href }}" title="{{ hint }}"
+         class="railitem {{ 'on' if admin_page == href }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </aside>
+  <div class="adminmain">{% block admin %}{% endblock %}</div>
+</div>
+{% endblock %}

@@ -94,7 +94,7 @@
     {% if batch.degraded and current.symbols %}
     <div class="banner warn" style="margin-top:14px">
       Yahoo returns one symbol per request, so lists longer than {{ batch.cap }} are truncated and
-      every price is delayed. <a href="/settings">Linking Schwab</a> fetches the whole list in one
+      every price is delayed. <a href="/admin/sources">Linking Schwab</a> fetches the whole list in one
       real-time call.
     </div>
     {% endif %}

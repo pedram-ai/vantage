@@ -257,6 +257,62 @@ def complete_setup(token: str, password: str) -> dict:
     return u
 
 
+def change_password(email: str, current: str, new: str) -> None:
+    """Change your OWN password. Raises ValueError with a safe message.
+
+    ⛔ THE CURRENT PASSWORD IS REQUIRED even though the caller is already
+    signed in. A live session is not proof of identity at the keyboard — an
+    unlocked laptop or a stolen cookie is exactly the case this defends, and
+    without it either one becomes permanent account takeover.
+
+    ⛔ Every OTHER session is revoked on success and the current one is
+    re-minted by the caller. Changing a password must evict whoever else was
+    signed in, which is the main reason a person changes one.
+    """
+    email = normalize_email(email)
+    u = get_user(email)
+    if not u or not u.get("pw_hash"):
+        raise ValueError("This account cannot change its password here.")
+    if not verify_password(current, u["pw_hash"], u["pw_salt"]):
+        record_fail(email)
+        raise ValueError("That is not your current password.")
+    if current == new:
+        raise ValueError("The new password must be different.")
+    problem = password_problem(new)
+    if problem:
+        raise ValueError(problem)
+    pw_hash, salt = hash_password(new)
+    _users().document(email).set({
+        "pw_hash": pw_hash, "pw_salt": salt,
+        "setup_token_hash": None, "setup_expires": None,
+        "password_changed_at": now_iso(),
+    }, merge=True)
+    clear_fails(email)
+    revoke_all_sessions(email)
+
+
+def update_profile(email: str, name: str) -> None:
+    """The only self-editable profile field. ⛔ Role and email are NOT — a user
+    who could edit their own role could promote themselves to owner."""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Name cannot be empty.")
+    if len(name) > 80:
+        raise ValueError("Name is too long.")
+    _users().document(normalize_email(email)).set({"name": name}, merge=True)
+
+
+def active_sessions(email: str) -> list[dict]:
+    """Where this account is currently signed in. No tokens, ever."""
+    email = normalize_email(email)
+    out = []
+    for doc in _sessions().where("email", "==", email).stream():
+        d = doc.to_dict()
+        out.append({"created_at": d.get("created_at"), "expires_at": d.get("expires_at"),
+                    "ip": d.get("ip"), "ua": (d.get("ua") or "")[:80]})
+    return sorted(out, key=lambda r: r.get("created_at") or "", reverse=True)
+
+
 # --- rate limiting ----------------------------------------------------------
 
 def _fails():

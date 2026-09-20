@@ -9,6 +9,7 @@ Navigation: Today · Markets · Positions · Performance · Settings.
 from __future__ import annotations
 
 import os
+from urllib.parse import quote_plus
 from datetime import date
 from pathlib import Path
 
@@ -128,18 +129,42 @@ def require_owner(request: Request) -> dict:
 
 def _ctx(request: Request, **kw) -> dict:
     """Common template context — the viewer drives nav visibility."""
+    from core import version
     kw.setdefault("me", current_user(request))
+    # Read once at import inside core.version; this is a dict lookup, not I/O.
+    kw.setdefault("build_footer", version.footer())
     return kw
 
 
+_TAPE_CACHE: tuple[float, list] | None = None
+_TAPE_TTL = 45.0
+
+
 def _tape() -> list[dict]:
-    """The three-symbol strip in the header."""
+    """The three-symbol strip in the header.
+
+    ⚠ MEASURED 2026-09-20 at 156 ms, ON EVERY PAGE — it is a live Yahoo fetch
+    and it renders in the header of every template, so it was charged to every
+    click including ones that have nothing to do with quotes. Yahoo already
+    rate-limits this app (see core/quotes_batch.py), so hitting it once per
+    navigation was also the wrong thing to do to the source.
+
+    45 s is short enough that the strip is never visibly stale and long enough
+    that a burst of navigation costs one fetch.
+    """
+    global _TAPE_CACHE
+    import time as _t
+    now = _t.monotonic()
+    if _TAPE_CACHE and now - _TAPE_CACHE[0] < _TAPE_TTL:
+        return _TAPE_CACHE[1]
     try:
         syms = watchlists.all_tracked_symbols()[:3]
         b = quotes_for(syms)
-        return [{"symbol": s, "price": b["quotes"].get(s, {}).get("price")} for s in syms]
+        out = [{"symbol": s, "price": b["quotes"].get(s, {}).get("price")} for s in syms]
     except Exception:  # noqa: BLE001
-        return []
+        out = []
+    _TAPE_CACHE = (now, out)
+    return out
 
 
 # --- brand assets -----------------------------------------------------------
@@ -304,14 +329,13 @@ def cash_page(request: Request):
 
 
 @app.get("/performance", response_class=HTMLResponse)
-def performance_page(request: Request, period: str = "month", ai: int = 1, page: int = 1):
+def performance_page(request: Request, period: str = "month", page: int = 1):
     check_user(request)
     from core import perf_charts
     perf = portfolio.performance(period, page=page)
     # ⚠ Charts must use the FULL period, never the current page — paginating
     # the table must not silently reshape the charts beside it.
     trades = perf.get("all_trades") or []
-    from core import ai_insights
     charts = {
         "equity": perf_charts.equity_curve(trades),
         "monthly": perf_charts.monthly_bars(trades),
@@ -321,7 +345,6 @@ def performance_page(request: Request, period: str = "month", ai: int = 1, page:
     }
     return templates.TemplateResponse(request, "performance.html", _ctx(request, **{
         "perf": perf, "charts": charts, "page": "performance", "tape": _tape(),
-        "ai": ai_insights.review(perf) if ai else None,
     }))
 
 
@@ -364,36 +387,32 @@ def _redirect_uri(request: Request) -> str:
     return f"{base}/schwab/callback"
 
 
-@app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request):
-    check_user(request)
+@app.get("/settings")
+def settings_moved():
+    """Settings became Admin -> Data sources. A 301 keeps every old bookmark,
+    link and browser autocomplete working instead of turning them into 404s."""
+    return RedirectResponse("/admin/sources", status_code=301)
+
+
+@app.get("/admin/sources", response_class=HTMLResponse)
+def sources_page(request: Request):
+    require_owner(request)
     from core import schwab
-    return templates.TemplateResponse(request, "settings.html", _ctx(request, **{
-        "s": store.get_settings(), "page": "settings", "tape": _tape(),
-        "schwab": schwab.status(), "conn": portfolio.is_connected(),
-        "ai": __import__("core.ai_insights", fromlist=["x"]).status(),
+    return templates.TemplateResponse(request, "sources.html", _ctx(request, **{
+        "s": store.get_settings(), "page": "admin", "admin_page": "/admin/sources",
+        "tape": _tape(), "schwab": schwab.status(), "conn": portfolio.is_connected(),
         "redirect_uri": _redirect_uri(request),
     }))
 
 
-@app.post("/settings")
+@app.post("/admin/sources")
 def save_settings(request: Request, contract_override: str = Form("")):
-    check_user(request)
-    store.save_settings({"contract_override": contract_override.strip().upper() or None})
-    return RedirectResponse("/settings", status_code=303)
-
-
-@app.post("/settings/ai")
-def save_ai_key(request: Request, api_key: str = Form("")):
-    """Pedram's own Anthropic key -> Secret Manager. Never echoed back."""
     require_owner(request)
-    from core import ai_insights, schwab
-    if api_key.strip():
-        schwab.write_secret(ai_insights.SECRET_NAME, api_key.strip())
-    return RedirectResponse("/settings", status_code=303)
+    store.save_settings({"contract_override": contract_override.strip().upper() or None})
+    return RedirectResponse("/admin/sources", status_code=303)
 
 
-@app.post("/settings/schwab")
+@app.post("/admin/sources/schwab")
 def save_schwab_creds(request: Request, app_key: str = Form(""), app_secret: str = Form("")):
     """Pedram's own developer.schwab.com credentials go straight into Secret
     Manager and are never echoed back to the page."""
@@ -403,15 +422,15 @@ def save_schwab_creds(request: Request, app_key: str = Form(""), app_secret: str
         schwab.write_secret(schwab.SECRET_KEY, app_key.strip())
     if app_secret.strip():
         schwab.write_secret(schwab.SECRET_SECRET, app_secret.strip())
-    return RedirectResponse("/settings", status_code=303)
+    return RedirectResponse("/admin/sources", status_code=303)
 
 
-@app.post("/settings/events")
+@app.post("/admin/sources/events")
 def add_event(request: Request, date: str = Form(...), kind: str = Form(...), text: str = Form("")):
     check_user(request)
     from core.calendar_rules import RULES
     store.add_event({"date": date, "kind": kind, "text": text or RULES.get(kind, kind)})
-    return RedirectResponse("/settings", status_code=303)
+    return RedirectResponse("/admin/sources", status_code=303)
 
 
 @app.get("/schwab/connect")
@@ -430,14 +449,14 @@ def schwab_callback(request: Request, code: str = "", error: str = ""):
     from core import schwab
     if error or not code:
         return HTMLResponse(
-            f"<p>Schwab returned: {error or 'no code'}</p><p><a href='/settings'>back</a></p>",
+            f"<p>Schwab returned: {error or 'no code'}</p><p><a href='/admin/sources'>back</a></p>",
             status_code=400)
     res = schwab.exchange_code(code, _redirect_uri(request))
     if not res.get("ok"):
         return HTMLResponse(
             f"<p>Could not complete the Schwab link: {res.get('error')}</p>"
-            f"<p><a href='/settings'>back</a></p>", status_code=400)
-    return RedirectResponse("/settings", status_code=303)
+            f"<p><a href='/admin/sources'>back</a></p>", status_code=400)
+    return RedirectResponse("/admin/sources", status_code=303)
 
 
 # --- archive / email --------------------------------------------------------
@@ -570,7 +589,7 @@ def admin_home(request: Request):
         "commits": len(b.get("commits", [])), "level": h["level"],
         "cost": "$%.2f" % h["cost"]["monthly"],
         "docs": len(docs_store.list_docs()), "users": _a.user_count(),
-        "latest_change": newest,
+        "latest_change": newest, "admin_page": "overview",
     }))
 
 
@@ -580,6 +599,7 @@ def admin_health(request: Request, force: int = 0):
     from core import sysheath
     return templates.TemplateResponse(request, "health.html", _ctx(request, **{
         "h": sysheath.snapshot(force=bool(force)), "page": "admin", "tape": _tape(),
+        "admin_page": "/admin/health",
     }))
 
 
@@ -597,11 +617,59 @@ def admin_docs(request: Request, doc: str = ""):
 
 # --- user administration (owner only; there is NO sign-up route) ------------
 
+@app.get("/profile", response_class=HTMLResponse)
+def profile_page(request: Request, saved: str = "", pw: str = "", err: str = ""):
+    me = check_user(request)
+    return templates.TemplateResponse(request, "profile.html", _ctx(request, **{
+        "u": me, "page": "profile", "tape": _tape(),
+        "sessions": auth.active_sessions(me["email"]),
+        "saved": saved == "1", "pw": pw == "1", "err": err,
+        "csrf": auth.csrf_for(request.cookies.get(auth.SESSION_COOKIE)),
+    }))
+
+
+@app.post("/profile")
+def save_profile(request: Request, name: str = Form(""), csrf: str = Form("")):
+    me = check_user(request)
+    tok = request.cookies.get(auth.SESSION_COOKIE)
+    if not auth.csrf_ok(tok, csrf):
+        return RedirectResponse("/profile?err=Session+expired.", status_code=303)
+    try:
+        auth.update_profile(me["email"], name)
+    except ValueError as e:
+        return RedirectResponse(f"/profile?err={quote_plus(str(e))}", status_code=303)
+    return RedirectResponse("/profile?saved=1", status_code=303)
+
+
+@app.post("/profile/password")
+def change_password(request: Request, current: str = Form(""), new: str = Form(""),
+                    confirm: str = Form(""), csrf: str = Form("")):
+    """⛔ Every other session is revoked inside auth.change_password, INCLUDING
+    this one — so a new cookie is minted here. Without it you change your
+    password and are immediately signed out, which reads as a failure."""
+    me = check_user(request)
+    tok = request.cookies.get(auth.SESSION_COOKIE)
+    if not auth.csrf_ok(tok, csrf):
+        return RedirectResponse("/profile?err=Session+expired.", status_code=303)
+    if new != confirm:
+        return RedirectResponse("/profile?err=The+two+new+passwords+do+not+match.",
+                                status_code=303)
+    try:
+        auth.change_password(me["email"], current, new)
+    except ValueError as e:
+        return RedirectResponse(f"/profile?err={quote_plus(str(e))}", status_code=303)
+    fresh = auth.login(me["email"], new, ip=(request.client.host if request.client else ""),
+                       ua=request.headers.get("user-agent", ""))
+    resp = RedirectResponse("/profile?pw=1", status_code=303)
+    resp.set_cookie(auth.SESSION_COOKIE, fresh, **_cookie_kwargs(request))
+    return resp
+
+
 @app.get("/users", response_class=HTMLResponse)
 def users_page(request: Request, created: str = "", link: str = "", mailed: str = ""):
     me = require_owner(request)
     return templates.TemplateResponse(request, "users.html", _ctx(request, **{
-        "me": me, "users": auth.list_users(), "page": "admin",
+        "me": me, "users": auth.list_users(), "page": "admin", "admin_page": "/users",
         "tape": _tape(), "created": created, "link": link, "mailed": mailed == "1",
         "csrf": auth.csrf_for(request.cookies.get(auth.SESSION_COOKIE)),
     }))

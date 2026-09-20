@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 {% block title %}Documentation · Argent Ridge{% endblock %}
-{% block content %}
+{% block admin %}
 <div class="card">
   <h1>Documentation</h1>
   <p class="muted">Build {{ build.short or '—' }} on {{ build.branch or '—' }}{% if build.built_at %} ·

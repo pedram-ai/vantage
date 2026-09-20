@@ -1,30 +1,23 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 {% block title %}Admin · Argent Ridge{% endblock %}
-{% block content %}
+{% block admin %}
 <div class="card">
   <h1>Admin console</h1>
   <p class="muted">{{ build.short or 'unknown build' }} on {{ build.branch or '—' }} ·
     {{ commits }} commit{{ '' if commits == 1 else 's' }} logged</p>
 </div>
 
-<div class="cols">
-  <div class="card">
-    <h2><a href="/admin/health" style="text-decoration:none">System health &rarr;</a></h2>
-    <p class="muted">Servers, database, dependencies and what it all costs.</p>
-    <p><span class="chip {{ 'call' if level=='green' else ('wait' if level=='amber' else 'put') }}">
+{# The rail carries the destinations now, so these are STATUS, not navigation —
+   the one screen that answers "is anything wrong?" without a click. #}
+<div class="tiles">
+  <div class="tile"><div class="fig">
+    <span class="chip {{ 'call' if level=='green' else ('wait' if level=='amber' else 'put') }}">
       {{ 'all good' if level=='green' else ('degraded' if level=='amber' else 'problem') }}</span>
-      <span class="faint">· {{ cost }}/mo</span></p>
-  </div>
-  <div class="card">
-    <h2><a href="/admin/docs" style="text-decoration:none">Documentation &rarr;</a></h2>
-    <p class="muted">Every change to the site, logged per commit, plus the repo's own docs.</p>
-    <p class="faint">{{ docs }} document{{ '' if docs == 1 else 's' }} · newest change
-      {{ latest_change or '—' }}</p>
-  </div>
-  <div class="card">
-    <h2><a href="/users" style="text-decoration:none">Users &rarr;</a></h2>
-    <p class="muted">Who can sign in. Accounts are created here; there is no public sign-up.</p>
-    <p class="faint">{{ users }} account{{ '' if users == 1 else 's' }}</p>
-  </div>
+    </div><div class="sub">system</div></div>
+  <div class="tile"><div class="fig">{{ cost }}</div><div class="sub">per month</div></div>
+  <div class="tile"><div class="fig">{{ users }}</div>
+    <div class="sub">account{{ '' if users == 1 else 's' }}</div></div>
+  <div class="tile"><div class="fig">{{ commits }}</div><div class="sub">commits logged</div></div>
+  <div class="tile"><div class="fig">{{ docs }}</div><div class="sub">documents</div></div>
 </div>
 {% endblock %}
