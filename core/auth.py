@@ -161,20 +161,70 @@ def delete_user(email: str) -> None:
     _users().document(email).delete()
 
 
-def new_setup_token(email: str) -> str:
-    """Owner-initiated password reset. Invalidates the old one."""
+def new_setup_token(email: str, revoke_password: bool = True) -> str:
+    """Issue a single-use setup/reset token. Invalidates any previous one.
+
+    `revoke_password=False` keeps the current password working until the new
+    one is set — correct for a self-service reset, where someone who merely
+    *requests* a reset (or an attacker who triggers one) must not be able to
+    lock the real owner out.
+    """
     email = normalize_email(email)
     if not get_user(email):
         raise ValueError("No such user.")
     token = secrets.token_urlsafe(32)
-    _users().document(email).set({
+    patch = {
         "setup_token_hash": hashlib.sha256(token.encode()).hexdigest(),
         "setup_expires": (datetime.now(timezone.utc)
                           + timedelta(hours=SETUP_TOKEN_HOURS)).isoformat(),
-        "pw_hash": None, "pw_salt": None,
-    }, merge=True)
-    revoke_all_sessions(email)
+    }
+    if revoke_password:
+        patch.update({"pw_hash": None, "pw_salt": None})
+    _users().document(email).set(patch, merge=True)
+    if revoke_password:
+        revoke_all_sessions(email)
     return token
+
+
+def request_reset(email: str) -> bool:
+    """Self-service reset. Returns whether an email was actually sent.
+
+    ⛔ The CALLER must show the same message either way. Revealing that an
+    address has no account turns this form into a user-enumeration oracle.
+    """
+    email = normalize_email(email)
+    u = get_user(email)
+    if not u or u.get("disabled"):
+        return False
+    if lockout_remaining(email) > 0:
+        return False
+    token = new_setup_token(email, revoke_password=False)
+    base = os.environ.get("VANTAGE_BASE_URL", "https://argentridge.com").rstrip("/")
+    try:
+        from . import mail_templates
+        from .mailer import send_html
+        subject, html = mail_templates.reset(
+            u.get("name") or email.split("@")[0],
+            f"{base}/setup/{token}", SETUP_TOKEN_HOURS)
+        res = send_html(email, subject, html)
+        return bool(res.get("ok"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def send_invite(email: str, token: str) -> bool:
+    email = normalize_email(email)
+    u = get_user(email) or {}
+    base = os.environ.get("VANTAGE_BASE_URL", "https://argentridge.com").rstrip("/")
+    try:
+        from . import mail_templates
+        from .mailer import send_html
+        subject, html = mail_templates.invite(
+            u.get("name") or email.split("@")[0],
+            f"{base}/setup/{token}", SETUP_TOKEN_HOURS)
+        return bool(send_html(email, subject, html).get("ok"))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def find_setup(token: str) -> dict | None:

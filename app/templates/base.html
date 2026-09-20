@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Argent Ridge{% endblock %}</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="/favicon.ico" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0f1a20">
 <style>
 :root{
   --paper:#f6f7f9; --card:#ffffff; --line:#e6eaef; --line-soft:#eff2f5;
@@ -159,7 +163,8 @@ abbr{text-decoration:underline dotted rgba(140,155,170,.7);cursor:help;text-unde
 <body>
 <header>
   <div class="htop">
-    <a href="/" class="brand">ARGENT RIDGE</a>
+    <a href="/" class="brand"><img src="/favicon.svg" alt="" width="26" height="26"
+       style="vertical-align:-7px;margin-right:9px;border-radius:6px">ARGENT RIDGE</a>
     {% if tape %}<div class="tape" style="margin-left:auto">
       {% for t in tape %}<span>{{ t.symbol }} <b>{{ '%.2f'|format(t.price) if t.price else '—' }}</b></span>{% endfor %}
     </div>{% endif %}

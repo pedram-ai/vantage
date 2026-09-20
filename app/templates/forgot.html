@@ -1,0 +1,22 @@
+{% extends "shell.html" %}
+{% block title %}Reset password · Argent Ridge{% endblock %}
+{% block content %}
+<div class="gate">
+  <img class="mark" src="/favicon.svg" alt="" width="58" height="58">
+  <h1 class="wordmark">ARGENT RIDGE</h1>
+  <p class="tag">{{ 'Check your email' if sent else 'Reset your password' }}</p>
+  {% if sent %}
+    <p class="foot" style="margin-top:0">If that address has an account, a reset link is on
+      its way. It works once and expires in 48 hours.</p>
+    <p class="foot">Your current password keeps working until you set a new one.</p>
+    <p><a class="btn" href="/login">Back to sign in</a></p>
+  {% else %}
+    <form method="post" action="/forgot">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required autofocus autocomplete="username">
+      <button class="btn" type="submit">Email me a reset link</button>
+    </form>
+    <p class="foot"><a href="/login">Back to sign in</a></p>
+  {% endif %}
+</div>
+{% endblock %}

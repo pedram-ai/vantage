@@ -118,6 +118,51 @@ def _tape() -> list[dict]:
         return []
 
 
+# --- brand assets -----------------------------------------------------------
+# Generated from one geometry table in core/brand.py, so the favicon and the
+# header logo cannot drift apart. Cached hard: the mark changes with a deploy.
+
+_BRAND_CACHE: dict = {}
+
+
+def _brand_asset(kind: str):
+    from fastapi.responses import Response
+    from core import brand
+    if kind not in _BRAND_CACHE:
+        if kind == "svg":
+            _BRAND_CACHE[kind] = (brand.svg(64).encode(), "image/svg+xml")
+        elif kind == "ico":
+            _BRAND_CACHE[kind] = (brand.ico(32), "image/x-icon")
+        elif kind == "apple":
+            _BRAND_CACHE[kind] = (brand.png(180), "image/png")
+        elif kind == "png32":
+            _BRAND_CACHE[kind] = (brand.png(32), "image/png")
+    data, mime = _BRAND_CACHE[kind]
+    return Response(content=data, media_type=mime,
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/favicon.svg")
+def favicon_svg():
+    return _brand_asset("svg")
+
+
+@app.get("/favicon.ico")
+def favicon_ico():
+    return _brand_asset("ico")
+
+
+@app.get("/icon-32.png")
+def icon_32():
+    return _brand_asset("png32")
+
+
+@app.get("/apple-touch-icon.png")
+@app.get("/apple-touch-icon-precomposed.png")
+def apple_icon():
+    return _brand_asset("apple")
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
@@ -422,6 +467,22 @@ def do_logout(request: Request):
     return resp
 
 
+@app.get("/forgot", response_class=HTMLResponse)
+def forgot_form(request: Request):
+    return templates.TemplateResponse(request, "forgot.html", {"sent": False, "error": None})
+
+
+@app.post("/forgot", response_class=HTMLResponse)
+def do_forgot(request: Request, email: str = Form(...)):
+    """⛔ Always renders the same confirmation. Telling the visitor whether an
+    address has an account turns this into a user-enumeration oracle."""
+    try:
+        auth.request_reset(email)
+    except Exception:  # noqa: BLE001
+        pass
+    return templates.TemplateResponse(request, "forgot.html", {"sent": True, "error": None})
+
+
 @app.get("/setup/{token}", response_class=HTMLResponse)
 def setup_form(request: Request, token: str):
     u = auth.find_setup(token)
@@ -489,11 +550,11 @@ def admin_docs(request: Request, doc: str = ""):
 # --- user administration (owner only; there is NO sign-up route) ------------
 
 @app.get("/users", response_class=HTMLResponse)
-def users_page(request: Request, created: str = "", link: str = ""):
+def users_page(request: Request, created: str = "", link: str = "", mailed: str = ""):
     me = require_owner(request)
     return templates.TemplateResponse(request, "users.html", _ctx(request, **{
         "me": me, "users": auth.list_users(), "page": "admin",
-        "tape": _tape(), "created": created, "link": link,
+        "tape": _tape(), "created": created, "link": link, "mailed": mailed == "1",
         "csrf": auth.csrf_for(request.cookies.get(auth.SESSION_COOKIE)),
     }))
 
@@ -508,10 +569,13 @@ def add_user(request: Request, email: str = Form(...), name: str = Form(""),
         res = auth.create_user(email, name, role)
     except ValueError as e:
         return RedirectResponse(f"/users?created={e}", status_code=303)
+    mailed = auth.send_invite(res["email"], res["setup_token"])
     base = os.environ.get("VANTAGE_BASE_URL") or str(request.base_url).rstrip("/")
+    # The link is still shown, because email can silently fail and an admin
+    # who cannot see the link has no way to onboard the person.
     return RedirectResponse(
-        f"/users?created={res['email']}&link={base}/setup/{res['setup_token']}",
-        status_code=303)
+        f"/users?created={res['email']}&mailed={int(mailed)}"
+        f"&link={base}/setup/{res['setup_token']}", status_code=303)
 
 
 @app.post("/users/{email}/reset")
@@ -520,9 +584,11 @@ def reset_user(request: Request, email: str, csrf: str = Form("")):
     if not auth.csrf_ok(request.cookies.get(auth.SESSION_COOKIE), csrf):
         raise HTTPException(400, "Bad CSRF token")
     token = auth.new_setup_token(email)
+    mailed = auth.send_invite(email, token)
     base = os.environ.get("VANTAGE_BASE_URL") or str(request.base_url).rstrip("/")
-    return RedirectResponse(f"/users?created={email}&link={base}/setup/{token}",
-                            status_code=303)
+    return RedirectResponse(
+        f"/users?created={email}&mailed={int(mailed)}&link={base}/setup/{token}",
+        status_code=303)
 
 
 @app.post("/users/{email}/disable")

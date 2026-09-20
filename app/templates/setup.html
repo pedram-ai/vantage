@@ -2,6 +2,7 @@
 {% block title %}Set your password · Argent Ridge{% endblock %}
 {% block content %}
 <div class="gate">
+  <img class="mark" src="/favicon.svg" alt="" width="58" height="58">
   <h1 class="wordmark">ARGENT RIDGE</h1>
   <p class="tag">{{ 'Set your password' if user else 'Link not valid' }}</p>
   {% if error %}<div class="err">{{ error }}</div>{% endif %}

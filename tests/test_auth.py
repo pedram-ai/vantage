@@ -57,6 +57,35 @@ def test_csrf():
     check("no session -> no csrf", auth.csrf_for(None) == "")
 
 
+def test_reset_and_brand():
+    print("Reset semantics:")
+    import inspect
+    src = inspect.getsource(auth.new_setup_token)
+    check("reset can preserve the existing password",
+          "revoke_password" in src,
+          "a requested reset must not lock the real owner out")
+    src2 = inspect.getsource(auth.request_reset)
+    check("request_reset refuses disabled accounts", "disabled" in src2)
+    check("request_reset respects lockout", "lockout_remaining" in src2)
+    check("request_reset returns a bool, never the token",
+          "return token" not in src2, "the token must only ever reach the inbox")
+
+    print("Brand assets:")
+    from core import brand
+    svg = brand.svg(64)
+    check("svg is well formed", svg.startswith("<svg") and svg.rstrip().endswith("</svg>"))
+    png16, png32 = brand.png(16), brand.png(32)
+    check("png magic", png16[:8] == b"\x89PNG\r\n\x1a\n")
+    check("16px icon is tiny", len(png16) < 1200, f"{len(png16)}b")
+    ico = brand.ico(32)
+    check("ico header", ico[:6] == b"\x00\x00\x01\x00\x01\x00")
+    check("one geometry table drives both",
+          "RIDGE" in inspect.getsource(brand.svg) or "RIDGE" in inspect.getsource(brand._raster))
+    check("no summit dot remains in either path",
+          "SUMMIT_R" not in inspect.getsource(brand),
+          "a size-conditional detail would make svg and png differ")
+
+
 def mutation_proof():
     print("Mutation proof:")
     h, s = auth.hash_password("abcdefghijkl")
@@ -67,7 +96,8 @@ def mutation_proof():
 
 
 def main() -> int:
-    test_hashing(); test_policy(); test_iap_trust(); test_csrf(); mutation_proof()
+    test_hashing(); test_policy(); test_iap_trust(); test_csrf()
+    test_reset_and_brand(); mutation_proof()
     print("RESULT:", "PASS" if not FAILS else f"FAIL ({len(FAILS)}): {FAILS}")
     return 0 if not FAILS else 1
 

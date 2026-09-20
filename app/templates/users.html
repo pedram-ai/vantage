@@ -11,8 +11,10 @@
 {% if link %}
 <div class="card">
   <div class="banner info">
-    <b>Setup link for {{ created }}</b> — send this to them. It works once and
-    expires in 48 hours. They choose their own password; you never see it.
+    <b>Setup link for {{ created }}</b> —
+    {% if mailed %}emailed to them.{% else %}<b>email could not be sent</b>, so send this
+    link yourself.{% endif %}
+    It works once and expires in 48 hours. They choose their own password; you never see it.
     <p style="margin:8px 0 0"><input value="{{ link }}" readonly
        onclick="this.select()" style="width:100%"></p>
   </div>
