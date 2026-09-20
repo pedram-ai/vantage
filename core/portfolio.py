@@ -229,10 +229,13 @@ def performance(period: str = "month") -> dict:
         return sorted(rows, key=lambda r: -r["pnl"])
 
     state = account_state()
-    # For "all time" prefer the cash-derived total — it is Schwab's own number
-    # and does not inherit per-lot fee-rounding drift.
+    # For "all time" prefer Schwab's own figures over our lot-derived ones.
+    # Otherwise the page shows TWO fee totals ($32,997 stated vs $33,144
+    # allocated) side by side, which reads as data to reconcile rather than
+    # one fact — and the stated one is authoritative.
     if period == "all" and state.get("realized_pnl") is not None:
         realized = state["realized_pnl"]
+        fees = state.get("total_fees", fees)
 
     return {
         "period": period, "label": label, "start": start, "end": end,

@@ -33,17 +33,23 @@ templates.env.globals["TIMEFRAMES"] = TIMEFRAMES
 templates.env.globals["PERIODS"] = PERIODS
 
 
-def _money(value, dp: int = 0, signed: bool = False) -> str:
-    """Thousands-separated money. Jinja's `format` filter uses %-formatting,
-    which has no comma flag — `'%,.0f'|format(x)` raises. Use `x|money`."""
+def _money(value, dp: int = 0, signed: bool = False, symbol: str = "$") -> str:
+    """Thousands-separated money WITH its currency symbol.
+
+    Jinja's `format` filter uses %-formatting, which has no comma flag —
+    `'%,.0f'|format(x)` raises. Use `x|money`.
+
+    The sign goes OUTSIDE the symbol (-$519,390, not $-519,390) so a loss
+    reads at a glance.
+    """
     try:
         v = float(value)
     except (TypeError, ValueError):
         return "—"
-    s = f"{abs(v):,.{dp}f}"
+    body = f"{symbol}{abs(v):,.{dp}f}"
     if v < 0:
-        return f"-{s}"
-    return f"+{s}" if signed else s
+        return f"-{body}"
+    return f"+{body}" if signed else body
 
 
 templates.env.filters["money"] = _money
