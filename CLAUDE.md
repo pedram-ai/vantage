@@ -409,3 +409,62 @@ Viewer: grouped index (order IS the IA — alphabetical buried `01 — Overview`
 This is defence in depth and costs nothing ($18/mo LB is avoided either way, per
 [[cloud-run-domain-mapping-no-lb]]), but it means signing in twice. **Not changed unilaterally —
 removing IAP weakens a control and is Pedram's call.**
+
+---
+
+## Research, autocomplete, and the REAL cause of slow navigation (2026-09-20, V0.004)
+
+### ⛔ Profiled every route. The database was not the problem — again.
+| route | before | after |
+|---|---:|---:|
+| `/` (Today) | 1,353 ms | **159 ms** |
+| `/markets` | 357 ms | **1 ms** |
+| `/admin` | 3,594 ms | **1 ms** |
+| `/performance` | 3 ms | 1 ms |
+
+**`levels_for_session()` and `events_for()` were called ONCE PER SYMBOL** inside `build_symbol`
+— eight Firestore round trips at ~150 ms on every load of a four-symbol Today page, long after
+the bar cache went warm. And `ensure_seed()` was a round trip on **every** hit of `/` and
+`/markets`, to ask a question whose answer can never become false again.
+
+`core/store.py` now has `_cached()/_bust()`; every writer busts. Same for watchlists, the doc
+list (baked into the image — it cannot change while the process runs) and `user_count`.
+
+⭐ **Pedram said "if you need to add sql database, please do it." It would have fixed nothing
+measured here.** 771 trades and 40 articles fit in memory; the cost was N round trips on the
+request path, not the store.
+
+### Symbol autocomplete — `core/symbol_search.py`
+Your own watchlist + traded symbols first, then **Yahoo's symbol index** (`/v1/finance/search`),
+merged, cached 15 min, ~150 ms. Keyboard navigable; the plain POST form still works with JS off.
+⛔ A typed ticker list would offer symbols that no longer resolve and omit everything listed
+since it was written, with nothing going red.
+
+### Research — `core/research.py`, `core/llm.py`, `/research`
+Left rail **Articles · Tweets · News · Charts · Sources**. Article saved in full on the left, a
+Gemini read on the right: SPY and QQQ, next 24 h and through Friday.
+
+- ⚠ **Substack has NO public API.** RSS only. Measured 2026-09-20: `smashelito` full text
+  4,746–6,561 chars · `tictoctrading` mixed, paid posts truncated to ~210 · **`tictoc` is a dead
+  2020 stub, the real one is `tictoctrading`**. 40 articles in, **12 paywalled**.
+- ⛔ **A teaser is NEVER summarised.** A confident read of an advertisement is indistinguishable
+  from a read of the analysis. `PAYWALL_CHARS = 700` sits between the measured teaser (~210) and
+  the shortest real post (2,843); a test asserts it stays there.
+- ⛔ **Every direction is `up/down/choppy/not stated` and carries `basis`** — the sentence it
+  rests on. The first live read returned **`not stated` for QQQ** on an ES-only article. That is
+  the feature working.
+- ⛔ **Reads are ~18 s and run in a daemon thread**; the route starts a job and polls. A test
+  asserts the route never calls `summarise` directly — that is the deleted AI panel's defect.
+- ⛔ **`refresh()` skips ids it already holds** — overwriting would drop `read` on every poll.
+- **Gemini 2.5 Pro on Vertex**, service-identity auth, **no API key anywhere**. ⚠
+  `aiplatform.googleapis.com` had to be **enabled** on `patexia-vantage` (403 until then).
+  ⚠ The model id is resolved once per process from a preference list, never pinned in code.
+- ⚠ List renders a **1,400-char preview** + full-text link: **218 KB → 51 KB**.
+- **Tweets / News are explicit empty states.** No sample feed.
+
+### ⚠ The Anthropic guard was matching PROSE
+It went red on `core/llm.py`, whose docstring exists to state the rule. A guard that punishes
+documenting the rule is a guard people delete. It now matches the **eight ways the dependency
+could actually return** (import, client construction, API host, key env var, secret name,
+`claude-*` model id, the deleted module), each with its own proof — plus a proof that prose
+about the rule is not a violation.
