@@ -140,3 +140,50 @@ Vantage stopped being an ES email tool. Navigation is now
 Soft rounded face (`ui-rounded` → SF Pro Rounded), **no monospace anywhere** — figures use
 `font-variant-numeric: tabular-nums` so columns align without the typewriter look. Palette is
 muted teal / sage / clay, not stoplight. Pedram asked for both explicitly.
+
+
+---
+
+## Trade history import (2026-09-20) — REAL DATA IS LOADED
+
+`core/schwab_import.py` + `python -m jobs.import_schwab <file.json> [--account NAME]`.
+Imported the corporate account: **1,153 transactions, 2023-10-11 → 2026-09-18, 771 round
+trips, 19 cash transfers.** Firestore: `transactions`, `trades`, `cash`, `import_runs`,
+`positions`.
+
+⭐ **THE EXPORT STATES ITS OWN TOTALS, SO THE PARSE IS PROVABLE.**
+`TotalTransactionsAmount` / `TotalFeesAndCommAmount` are reconciled to the cent and the
+import is **REFUSED** if they do not match. Do not weaken this gate — these numbers land on
+a P&L screen where they read as fact.
+
+### ⛔ Two bugs that produced confident wrong money. Both are now tested.
+
+1. **SAME-DAY ORDERING.** Schwab lists newest-first, so a day trade's `Sell to Close`
+   appears BEFORE its `Buy to Open`. Sorting by date alone closes a position that does not
+   exist yet, fabricating an unmatched close AND a phantom open position from ONE real round
+   trip. Measured before the fix: **76 unmatched closes, 54 phantom positions.** Within a
+   date, opens MUST be processed before closes (`_order` in `build_round_trips`).
+2. **REVERSE SPLITS.** Schwab books a split as a PAIR on one date — old shares leave under
+   the CUSIP (negative qty), new shares arrive under the ticker. SQQQ did 5:1 on 2024-11-07
+   (−59,800 / +11,960). Un-adjusted pre-split lots matched against post-split sells
+   fabricated **~+$894k of profit**. `detect_splits()` + `_apply_split()`.
+
+### ⚠ Prefer CASH-derived P&L for totals
+With no open positions, realized P&L is recoverable from cash alone
+(`net_cash − deposits − income − costs`) and that is Schwab's own arithmetic. Lot matching
+is for PER-TRADE attribution and drifts ~$147 on this file from per-lot fee rounding.
+`portfolio.account_state()` reports both and the gap; the Performance page shows it.
+
+### The account, as imported
+Deposits **$565,100** · cash now **$94,651.65** · realized **−$519,390.02** (−91.9% of
+deposits) · interest & dividends **+$50,676.37** · fees **$32,996.57** · **flat, nothing
+open** since 2026-09-18.
+
+⛔ **NO FUTURES IN THIS ACCOUNT.** It trades QQQ options (350), SPY options (255), and
+SQQQ/TQQQ shares. The ES-centric origin of this project does not match what the corporate
+account actually does — ES may live in a different (personal) account. The daily Schwab
+transaction sync, when built, therefore covers equities/options, which IS what matters here.
+
+### Jinja trap
+`'%,.0f'|format(x)` **raises** — Python %-formatting has no comma flag. Use the
+`money` filter registered in `app/main.py` (`{{ x|money }}`, `{{ x|money(2, true) }}`).

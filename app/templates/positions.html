@@ -7,7 +7,15 @@
   <p class="muted">What you hold now, and where each one sits against today's map.</p>
 </div>
 
-{% if not conn.ready %}
+{% if conn.ready and not positions %}
+<div class="card"><div class="empty">
+  <h2>Flat — nothing open</h2>
+  <p class="muted">Every position in the imported history is closed. The last one was sold on
+    {{ conn.coverage[-1].end if conn.coverage else '—' }}.</p>
+  <p class="faint">This is a fact from the data, not a missing connection —
+    <a href="/performance">see what those trades did &rarr;</a></p>
+</div></div>
+{% elif not conn.ready %}
 <div class="card">
   <div class="empty">
     <h2>No position data yet</h2>
@@ -27,10 +35,10 @@
 <div class="card">
   <div class="tiles">
     <div class="tile"><div class="t">Open P&amp;L</div>
-      <div class="v fig {{ 'up' if totals.open_pnl > 0 else 'down' }}">{{ '%+,.0f'|format(totals.open_pnl) }}</div>
+      <div class="v fig {{ 'up' if totals.open_pnl > 0 else 'down' }}">{{ totals.open_pnl|money(0, true) }}</div>
       <div class="n">{{ positions|length }} position{{ '' if positions|length == 1 else 's' }}</div></div>
     <div class="tile"><div class="t">Cost basis</div>
-      <div class="v fig">{{ '%,.0f'|format(totals.cost) }}</div><div class="n">capital deployed</div></div>
+      <div class="v fig">{{ totals.cost|money(0) }}</div><div class="n">capital deployed</div></div>
     <div class="tile"><div class="t">Expiring ≤7d</div>
       <div class="v fig">{{ totals.expiring }}</div><div class="n">decay accelerating</div></div>
   </div>
@@ -50,7 +58,7 @@
         <td class="r fig">{{ '%.2f'|format(p.mark) if p.mark else '—' }}
           {% if p.mark_estimated %}<span class="sub">est</span>{% endif %}</td>
         <td class="r fig {{ 'up' if p.open_pnl and p.open_pnl > 0 else 'down' }}">
-          {{ '%+,.0f'|format(p.open_pnl) if p.open_pnl is not none else '—' }}</td>
+          {{ p.open_pnl|money(0, true) if p.open_pnl is not none else '—' }}</td>
         <td class="sub">{{ p.zone_note or '—' }}</td>
       </tr>
     {% endfor %}

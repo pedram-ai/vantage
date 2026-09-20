@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Cash · Vantage{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Cash</h1>
+  <p class="muted">Money in and out of the account. Kept separate from Performance on purpose —
+    a deposit is not profit.</p>
+</div>
+<div class="card">
+  <div class="tiles">
+    <div class="tile"><div class="t">Net deposits</div>
+      <div class="v fig">{{ state.net_deposits or 0|money(0) }}</div></div>
+    <div class="tile"><div class="t">Cash now</div>
+      <div class="v fig">{{ state.net_cash or 0|money(0) }}</div></div>
+    <div class="tile"><div class="t">Interest &amp; dividends</div>
+      <div class="v fig up">{{ state.income or 0|money(0, true) }}</div></div>
+    <div class="tile"><div class="t">Margin &amp; fees</div>
+      <div class="v fig down">{{ state.total_fees or 0|money(0) }}</div></div>
+  </div>
+</div>
+<div class="card">
+  <h2>Transfers</h2>
+  <div class="tscroll"><table>
+    <thead><tr><th>Date</th><th>Type</th><th>Description</th><th class="r">Amount</th></tr></thead>
+    <tbody>{% for c in flows %}
+      <tr><td class="fig">{{ c.date }}</td><td>{{ c.action }}</td>
+        <td class="sub">{{ c.description }}</td>
+        <td class="r fig {{ 'up' if c.amount and c.amount > 0 else 'down' }}">
+          {{ c.amount|money(2, true) if c.amount is not none else '—' }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% if not flows %}<p class="faint">No transfers imported.</p>{% endif %}
+</div>
+{% endblock %}

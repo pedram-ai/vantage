@@ -32,6 +32,8 @@ jobs:
         run: python -m tests.test_quote_source
       - name: Multi-instrument guards
         run: python -m tests.test_instruments
+      - name: Schwab import (ordering, splits, reconciliation)
+        run: python -m tests.test_schwab_import
 
   deploy:
     needs: test

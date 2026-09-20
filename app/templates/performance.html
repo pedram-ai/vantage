@@ -18,6 +18,37 @@
   </div>
 </div>
 
+{% if perf.account and perf.account.net_deposits %}
+<div class="card">
+  <h2>Account <span class="faint">{{ perf.account.accounts|join(', ') }} ·
+    {{ perf.account.start }} → {{ perf.account.end }}</span></h2>
+  <div class="tiles">
+    <div class="tile"><div class="t">Deposited</div>
+      <div class="v fig">{{ perf.account.net_deposits|money(0) }}</div>
+      <div class="n">cash you put in</div></div>
+    <div class="tile"><div class="t">Cash now</div>
+      <div class="v fig">{{ perf.account.net_cash|money(0) }}</div>
+      <div class="n">no open positions</div></div>
+    <div class="tile"><div class="t">Realized P&amp;L</div>
+      <div class="v fig {{ 'up' if perf.account.realized_pnl > 0 else 'down' }}">
+        {{ perf.account.realized_pnl|money(0, true) }}</div>
+      <div class="n">{{ '%+.1f%%'|format(perf.account.return_pct) }} of deposits</div></div>
+    <div class="tile"><div class="t">Interest &amp; dividends</div>
+      <div class="v fig up">{{ perf.account.income|money(0, true) }}</div>
+      <div class="n">not trading profit</div></div>
+    <div class="tile"><div class="t">Fees &amp; commissions</div>
+      <div class="v fig down">{{ perf.account.total_fees|money(0) }}</div>
+      <div class="n">paid to Schwab</div></div>
+  </div>
+  <p class="faint" style="margin-top:12px">
+    Realized P&amp;L is derived from <b>cash</b>: deposits, income and costs removed from the
+    account's net movement, which Schwab states itself. Lot-by-lot matching gives
+    {{ perf.account.realized_pnl_lots|money(0, true) }} — a
+    {{ perf.account.residual|abs|money(2) }} gap from per-trade fee rounding, shown
+    rather than hidden.</p>
+</div>
+{% endif %}
+
 {% if perf.empty %}
 <div class="card"><div class="empty">
   <h2>Nothing to measure yet</h2>
@@ -33,19 +64,19 @@
     <div>
       <div class="fig {{ 'up' if perf.total > 0 else 'down' }}"
            style="font-size:42px;font-weight:680;letter-spacing:-1.4px;line-height:1">
-        {{ '%+,.0f'|format(perf.total) }}</div>
+        {{ perf.total|money(0, true) }}</div>
       <div class="muted" style="margin-top:6px">{{ perf.label }} ·
         {{ perf.n_trades }} trade{{ '' if perf.n_trades == 1 else 's' }}</div>
     </div>
     <div style="display:flex;gap:26px">
       <div><h3 style="margin:0">Realized</h3>
         <div class="fig {{ 'up' if perf.realized > 0 else 'down' }}" style="font-size:19px;font-weight:620">
-          {{ '%+,.0f'|format(perf.realized) }}</div></div>
+          {{ perf.realized|money(0, true) }}</div></div>
       <div><h3 style="margin:0">Open</h3>
         <div class="fig {{ 'up' if perf.open_pnl > 0 else 'down' }}" style="font-size:19px;font-weight:620">
-          {{ '%+,.0f'|format(perf.open_pnl) }}</div></div>
+          {{ perf.open_pnl|money(0, true) }}</div></div>
       <div><h3 style="margin:0">Fees</h3>
-        <div class="fig" style="font-size:19px;font-weight:620">{{ '%-,.0f'|format(perf.fees) }}</div></div>
+        <div class="fig" style="font-size:19px;font-weight:620">{{ perf.fees|money(0) }}</div></div>
     </div>
   </div>
 </div>
@@ -55,9 +86,9 @@
     <div class="tile"><div class="t">Win rate</div>
       <div class="v fig">{{ perf.win_rate ~ '%' if perf.win_rate is not none else '—' }}</div></div>
     <div class="tile"><div class="t">Avg win</div>
-      <div class="v fig up">{{ '%+,.0f'|format(perf.avg_win) if perf.avg_win else '—' }}</div></div>
+      <div class="v fig up">{{ perf.avg_win|money(0, true) if perf.avg_win else '—' }}</div></div>
     <div class="tile"><div class="t">Avg loss</div>
-      <div class="v fig down">{{ '%+,.0f'|format(perf.avg_loss) if perf.avg_loss else '—' }}</div></div>
+      <div class="v fig down">{{ perf.avg_loss|money(0, true) if perf.avg_loss else '—' }}</div></div>
   </div>
 </div>
 
@@ -69,7 +100,7 @@
       <tbody>{% for r in perf.by_symbol %}
         <tr><td><a class="sym" href="/symbol/{{ r.key }}">{{ r.key }}</a></td>
           <td class="r fig">{{ r.n }}</td><td class="r fig">{{ r.win_rate }}%</td>
-          <td class="r fig {{ 'up' if r.pnl > 0 else 'down' }}">{{ '%+,.0f'|format(r.pnl) }}</td></tr>
+          <td class="r fig {{ 'up' if r.pnl > 0 else 'down' }}">{{ r.pnl|money(0, true) }}</td></tr>
       {% endfor %}</tbody>
     </table></div>
   </div>
@@ -80,7 +111,7 @@
       <tbody>{% for r in perf.by_zone %}
         <tr><td>{{ r.key }}</td><td class="r fig">{{ r.n }}</td>
           <td class="r fig">{{ r.win_rate }}%</td>
-          <td class="r fig {{ 'up' if r.pnl > 0 else 'down' }}">{{ '%+,.0f'|format(r.pnl) }}</td></tr>
+          <td class="r fig {{ 'up' if r.pnl > 0 else 'down' }}">{{ r.pnl|money(0, true) }}</td></tr>
       {% endfor %}</tbody>
     </table></div>
   </div>
@@ -97,13 +128,14 @@
           <span class="sub">{{ t.description or '' }}</span></td>
         <td class="sub">{{ t.zone or '—' }}</td>
         <td class="r fig">{{ t.qty }}</td>
-        <td class="r fig {{ 'up' if t.pnl > 0 else 'down' }}">{{ '%+,.0f'|format(t.pnl) }}</td></tr>
+        <td class="r fig {{ 'up' if t.pnl > 0 else 'down' }}">{{ t.pnl|money(0, true) }}</td></tr>
     {% endfor %}</tbody>
   </table></div>
 </div>
 {% endif %}
 
-<p class="faint">Deposits and withdrawals are never counted as profit — period figures are built
+<p class="faint"><a href="/cash">Cash &amp; transfers &rarr;</a> &nbsp;·&nbsp;
+Deposits and withdrawals are never counted as profit — period figures are built
 from trades, not from the change in account value.</p>
 
 {% endblock %}

@@ -64,10 +64,11 @@
         {% set q = batch.quotes.get(s) %}
         <tr>
           <td><a class="sym" href="/symbol/{{ s }}">{{ s }}</a></td>
-          <td class="r fig">{{ '%.2f'|format(q.price) if q and q.price else '—' }}</td>
-          <td class="r fig {{ 'up' if q and q.change_pct and q.change_pct > 0 else ('down' if q and q.change_pct and q.change_pct < 0 else '') }}">
-            {{ '%+.2f%%'|format(q.change_pct) if q and q.change_pct is not none else '—' }}</td>
-          <td class="sub">{{ q.source_label if q else '—' }}</td>
+          <td class="r fig">{{ '%.2f'|format(q.price) if q and q.get('price') else '—' }}</td>
+          {% set chg = q.get('change_pct') if q else none %}
+          <td class="r fig {{ 'up' if chg and chg > 0 else ('down' if chg and chg < 0 else '') }}">
+            {{ '%+.2f%%'|format(chg) if chg is not none else '—' }}</td>
+          <td class="sub">{{ q.get('source_label', '—') if q else '—' }}</td>
           {% if not current.auto %}
           <td class="r">
             <form method="post" action="/watchlists/{{ current.id }}/symbols/{{ s }}/delete">

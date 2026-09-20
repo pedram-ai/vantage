@@ -33,6 +33,22 @@ templates.env.globals["TIMEFRAMES"] = TIMEFRAMES
 templates.env.globals["PERIODS"] = PERIODS
 
 
+def _money(value, dp: int = 0, signed: bool = False) -> str:
+    """Thousands-separated money. Jinja's `format` filter uses %-formatting,
+    which has no comma flag — `'%,.0f'|format(x)` raises. Use `x|money`."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    s = f"{abs(v):,.{dp}f}"
+    if v < 0:
+        return f"-{s}"
+    return f"+{s}" if signed else s
+
+
+templates.env.filters["money"] = _money
+
+
 def check_user(request: Request) -> str:
     email = request.headers.get("x-goog-authenticated-user-email", "")
     email = email.split(":")[-1].lower()
@@ -155,6 +171,15 @@ def positions_page(request: Request):
     return templates.TemplateResponse(request, "positions.html", {
         "conn": conn, "positions": positions, "totals": totals,
         "page": "positions", "tape": _tape(),
+    })
+
+
+@app.get("/cash", response_class=HTMLResponse)
+def cash_page(request: Request):
+    check_user(request)
+    return templates.TemplateResponse(request, "cash.html", {
+        "state": portfolio.account_state(), "flows": portfolio.cash_flows(),
+        "page": "performance", "tape": _tape(),
     })
 
 

@@ -41,9 +41,9 @@ def _from_schwab(symbols: list[str]) -> dict[str, dict] | None:
         if q and q.get("price"):
             out[sym] = {
                 "symbol": sym, "price": float(q["price"]),
-                "change_pct": q.get("change_pct"),
+                "change_pct": q.get("change_pct"), "delayed_min": 0,
                 "source": "schwab", "source_label": "Schwab · real-time",
-                "as_of": q.get("as_of"), "delayed_min": 0, "ok": True,
+                "as_of": q.get("as_of"), "ok": True,
             }
     return out or None
 
@@ -53,7 +53,8 @@ def _from_yahoo(symbols: list[str]) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for i, sym in enumerate(symbols):
         if i >= YAHOO_MAX_PER_REFRESH:
-            out[sym] = {"symbol": sym, "price": None, "ok": False,
+            out[sym] = {"symbol": sym, "price": None, "change_pct": None,
+                        "as_of": None, "delayed_min": None, "ok": False,
                         "source": "yahoo", "source_label": "not fetched",
                         "skipped": True}
             continue
@@ -71,7 +72,8 @@ def _from_yahoo(symbols: list[str]) -> dict[str, dict]:
                 "delayed_min": YAHOO_DELAY_MIN, "ok": price is not None,
             }
         except Exception as e:  # noqa: BLE001
-            out[sym] = {"symbol": sym, "price": None, "ok": False,
+            out[sym] = {"symbol": sym, "price": None, "change_pct": None,
+                        "as_of": None, "delayed_min": None, "ok": False,
                         "source": "yahoo", "source_label": "unavailable",
                         "error": str(e)[:120]}
     return out

@@ -79,6 +79,42 @@ def import_coverage() -> list[dict]:
     return sorted(out, key=lambda r: r.get("start", ""))
 
 
+def latest_import() -> dict | None:
+    runs = import_coverage()
+    return runs[-1] if runs else None
+
+
+def account_state() -> dict:
+    """Cash-truth account figures from the imports.
+
+    ⭐ Realized P&L here is derived from CASH, not from lot matching: with no
+    open positions the two must agree, and cash is the one Schwab states
+    itself. The lot-matched figure is kept for per-trade attribution and the
+    gap between them is reported, never hidden.
+    """
+    runs = import_coverage()
+    if not runs:
+        return {}
+    dep = sum(float(r.get("net_deposits", 0) or 0) for r in runs)
+    inc = sum(float(r.get("income", 0) or 0) for r in runs)
+    cost = sum(float(r.get("costs", 0) or 0) for r in runs)
+    cash = sum(float(r.get("net_cash", 0) or 0) for r in runs)
+    fees = sum(float(r.get("total_fees", 0) or 0) for r in runs)
+    pnl_cash = sum(float(r.get("realized_pnl_cash", 0) or 0) for r in runs)
+    pnl_lots = sum(float(r.get("realized_pnl_lots", 0) or 0) for r in runs)
+    return {
+        "net_deposits": dep, "income": inc, "costs": cost,
+        "net_cash": cash, "total_fees": fees,
+        "realized_pnl": pnl_cash,
+        "realized_pnl_lots": pnl_lots,
+        "residual": round(pnl_lots - pnl_cash, 2),
+        "return_pct": (pnl_cash / dep * 100) if dep else None,
+        "start": min((r.get("start") or "9999") for r in runs),
+        "end": max((r.get("end") or "") for r in runs),
+        "accounts": sorted({r.get("account") for r in runs if r.get("account")}),
+    }
+
+
 def is_connected() -> dict:
     """What the portfolio pages can honestly show today."""
     has_trades = any(True for _ in db().collection("trades").limit(1).stream())
@@ -192,8 +228,15 @@ def performance(period: str = "month") -> dict:
             r["win_rate"] = round(100 * r["wins"] / r["n"]) if r["n"] else None
         return sorted(rows, key=lambda r: -r["pnl"])
 
+    state = account_state()
+    # For "all time" prefer the cash-derived total — it is Schwab's own number
+    # and does not inherit per-lot fee-rounding drift.
+    if period == "all" and state.get("realized_pnl") is not None:
+        realized = state["realized_pnl"]
+
     return {
         "period": period, "label": label, "start": start, "end": end,
+        "account": state,
         "n_trades": len(trades),
         "realized": realized, "fees": fees, "open_pnl": open_pnl,
         "total": realized + open_pnl,
