@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Research · Argent Ridge{% endblock %}
 {% set TABS = [
-  ("articles", "Articles", "Saved posts with a read on SPY and QQQ"),
+  ("articles", "Articles", "Saved posts with a read on SPY"),
+  ("people",   "People",   "Who is saying what, by horizon"),
   ("tweets",   "Tweets",   "Not connected yet"),
   ("news",     "News",     "Not connected yet"),
-  ("charts",   "Charts",   "Structure for the symbols you track"),
   ("paste",    "Paste in", "For paid posts that cannot be fetched"),
   ("sources",  "Sources",  "Which feeds are pulled"),
 ] %}
@@ -243,6 +243,70 @@
     </div>
 
   {# ------------------------------------------------------------------- PASTE #}
+  {# ------------------------------------------------------------------ PEOPLE #}
+  {% elif tab == 'people' %}
+    <div class="filters">
+      <span class="lab">Horizon</span>
+      <a class="pill {{ 'on' if not horizon }}"
+         href="/research?tab=people&days={{ days }}">Overall</a>
+      {% for k, l in horizons %}
+      <a class="pill {{ 'on' if horizon == k }}"
+         href="/research?tab=people&horizon={{ k }}&days={{ days }}">{{ l }}</a>
+      {% endfor %}
+      <span class="gap"></span>
+      <span class="lab">Window</span>
+      {% for d, l in [(30,'30d'), (90,'90d'), (365,'1y'), (0,'All')] %}
+      <a class="pill {{ 'on' if days == d }}"
+         href="/research?tab=people{{ '&horizon=' ~ horizon if horizon }}&days={{ d }}">{{ l }}</a>
+      {% endfor %}
+    </div>
+
+    {% if horizon %}
+    {% set voiced = people | selectattr('lean') | list %}
+    <p class="muted" style="margin:0 0 13px"><b>{{ voiced|length }}</b> of
+      {{ people|length }} have a view at
+      <b>{{ horizons | selectattr('0','equalto',horizon) | map(attribute='1') | first }}</b>.
+      <span class="faint">The rest do not address it — a daily-plan writer has no
+        12-month call, and that is a fact about them, not a gap.</span></p>
+    {% endif %}
+
+    <div class="ppl">
+      {% for p in people %}
+      <div class="prow {{ 'quiet' if not p.lean }}">
+        <div class="pname">
+          <b>{{ p.label }}</b>
+          {% if p.own_feed %}<span class="pf" title="Publishes their own feed">writes</span>{% endif %}
+          <span class="faint">{{ p.articles }} article{{ '' if p.articles == 1 else 's' }}
+            {%- if p.unread %} · {{ p.unread }} unread{% endif %}</span>
+        </div>
+        <div class="plean">
+          {% if p.lean %}
+          <span class="lean {{ p.lean }}">{{ p.lean }}</span>
+          <span class="tally">
+            {% if p.tally.bullish %}<i class="b" style="width:{{ p.tally.bullish * 9 }}px"
+              title="{{ p.tally.bullish }} bullish"></i>{% endif %}
+            {% if p.tally.bearish %}<i class="r" style="width:{{ p.tally.bearish * 9 }}px"
+              title="{{ p.tally.bearish }} bearish"></i>{% endif %}
+            {% if p.tally.neutral %}<i class="n" style="width:{{ p.tally.neutral * 9 }}px"
+              title="{{ p.tally.neutral }} neutral"></i>{% endif %}
+          </span>
+          <span class="faint">{{ p.votes }} call{{ '' if p.votes == 1 else 's' }}</span>
+          {% elif p.read %}<span class="faint">no view at this horizon</span>
+          {% else %}<span class="faint">not read yet</span>{% endif %}
+        </div>
+        <div class="hdots">
+          {% for k, l in horizons %}
+          <span class="hd {{ 'lit' if k in p.speaks }} {{ 'here' if k == horizon }}"
+                title="{{ l }}{{ ' — speaks to this' if k in p.speaks else ' — nothing' }}"
+          >{{ '1y+' if k == 'long' else l.split(' ')[0] }}</span>
+          {% endfor %}
+        </div>
+        <a class="pgo" href="/research?source={{ p.sources[0] | urlencode }}&days={{ days }}">articles &rarr;</a>
+      </div>
+      {% endfor %}
+    </div>
+    {% if not people %}<div class="card empty"><p>No articles in this window.</p></div>{% endif %}
+
   {% elif tab == 'paste' %}
     {% if err %}<div class="banner warn">{{ err }}</div>{% endif %}
     <div class="card">

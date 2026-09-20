@@ -323,7 +323,7 @@ def charts_sync(request: Request, symbol: str = Form("SPY")):
 @app.get("/research", response_class=HTMLResponse)
 def research_page(request: Request, tab: str = "articles", source: str = "",
                   page: int = 1, err: str = "", pasted: str = "",
-                  was: int = 0, now: int = 0, days: int = 0):
+                  was: int = 0, now: int = 0, days: int = 0, horizon: str = ""):
     check_user(request)
     from core import convert, llm, read_viz, research
     research.seed_sources()
@@ -367,6 +367,8 @@ def research_page(request: Request, tab: str = "articles", source: str = "",
                       if tab == "paste" else []),
         "job": research.job_status(), "err": err, "pasted": pasted,
         "was": was, "now": now, "days": days, "spy_now": spy_now,
+        "people": (research.people(days or 90, horizon) if tab == "people" else []),
+        "horizon": horizon, "horizons": research.HORIZONS,
         "timeline": research.timeline(source=source, days=days) if tab == "articles" else [],
         "outlook": (research.outlook(14, spy_now) if tab == "articles" else None),
         "ladder": (read_viz.ladder(research.outlook(14, spy_now).get("levels_all", []),

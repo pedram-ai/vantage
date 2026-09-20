@@ -87,6 +87,8 @@ def add_source(kind: str, handle: str, label: str = "") -> str:
     sid = re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-",
                                     base.lower().split("·")[0].strip())).strip("-")
     sid = sid[:40] or "source"
+    if kind == "news":
+        sid = "news-" + sid
     db().collection(SOURCES).document(sid).set({
         "kind": kind or "substack", "handle": handle,
         "label": label.strip() or handle, "enabled": True,
@@ -135,8 +137,113 @@ def _parse_date(s: str) -> str | None:
     return None
 
 
+# ⚠ Fetching article bodies is one HTTP request each, so a news source is
+# bounded per refresh. 16 people x 8 articles is already ~2 minutes.
+NEWS_PER_REFRESH = 8
+
+# Publishers that render entirely in JavaScript — a fetch returns 0 characters
+# of body no matter what. Measured 2026-09-20. Skipped rather than stored as
+# empty articles that look like failed reads.
+JS_ONLY = ("msn.com", "bloomberg.com", "wsj.com", "ft.com", "barrons.com",
+           "seekingalpha.com", "investors.com")
+
+
+def _article_body(html_text: str) -> str:
+    """Body text from a news page. Prefers <article>, falls back to <p> soup."""
+    import html as _h
+    def clean(frag: str) -> str:
+        t = re.sub(r"(?is)<(script|style|nav|header|footer|aside|form)[^>]*>.*?</\1>",
+                   " ", frag)
+        t = re.sub(r"(?i)<(br|/p|/div|/li|/h[1-6])[^>]*>", "\n", t)
+        t = re.sub(r"<[^>]+>", "", t)
+        t = _h.unescape(t)
+        t = re.sub(r"[ \t\xa0]+", " ", t)
+        return re.sub(r"\n{3,}", "\n\n", t).strip()
+
+    m = re.search(r"(?is)<article[^>]*>(.*?)</article>", html_text)
+    if m:
+        b = clean(m.group(1))
+        if len(b) > 400:
+            return b
+    ps = re.findall(r"(?is)<p[^>]*>(.*?)</p>", html_text)
+    return clean(" ".join(f"<p>{p}</p>" for p in ps))
+
+
+def fetch_news(src: dict, limit: int = NEWS_PER_REFRESH) -> list[dict]:
+    """Recent coverage of one person, via Bing News RSS.
+
+    ⛔ WHY NOT GOOGLE NEWS: its RSS is richer (100 items vs 11) but every link
+    is an ENCRYPTED redirect — the `CBMi…` token decodes to 152 bytes with no
+    URL in it, and the redirect is client-side JavaScript, so nothing resolves
+    server-side. Bing carries the real publisher URL in its `url=` parameter.
+
+    ⚠ These are MENTIONS, not the person's own writing. The article is stored
+    with the publisher as its source and the person as the subject, because
+    "Tom Lee says X" in Yahoo Finance is not Tom Lee publishing.
+    """
+    from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+    import html as _h
+
+    query = src.get("handle", "")
+    if not query:
+        return []
+    url = ("https://www.bing.com/news/search?q=" + quote_plus(query)
+           + "&format=RSS")
+    try:
+        from curl_cffi import requests as cr
+        r = cr.get(url, impersonate="chrome", timeout=20)
+        if r.status_code != 200:
+            return []
+        xml = r.text
+    except Exception:  # noqa: BLE001
+        return []
+
+    out = []
+    for block in re.findall(r"<item>(.*?)</item>", xml, re.S):
+        if len(out) >= limit:
+            break
+        raw_link = _h.unescape(_tag(block, "link"))
+        qs = parse_qs(urlparse(raw_link).query)
+        if "url" not in qs:
+            continue
+        real = unquote(qs["url"][0])
+        host = urlparse(real).netloc.lower()
+        if any(j in host for j in JS_ONLY):
+            continue
+        title = _text(_tag(block, "title"))
+        if not title:
+            continue
+        try:
+            from curl_cffi import requests as cr
+            resp = cr.get(real, impersonate="chrome", timeout=20,
+                          allow_redirects=True)
+            body = _article_body(resp.text) if resp.status_code == 200 else ""
+        except Exception:  # noqa: BLE001
+            body = ""
+        out.append({
+            "id": hashlib.sha256(real.encode()).hexdigest()[:24],
+            "source": src["id"],
+            "source_label": src.get("label", src["id"]),
+            "publisher": host.replace("www.", ""),
+            "title": title,
+            "url": real,
+            "published_at": _parse_date(_tag(block, "pubDate")),
+            "body": body,
+            "chars": len(body),
+            # ⚠ Not "paywalled" — it is not behind a paywall, we simply could
+            # not read it. Different fact, different word, and the UI says so.
+            "paywalled": len(body) < PAYWALL_CHARS,
+            "unreadable": len(body) < PAYWALL_CHARS,
+            "kind": "news",
+            "fetched_at": now_iso(),
+        })
+    return out
+
+
 def fetch_source(src: dict, limit: int = 20) -> list[dict]:
     """Parse one source's feed into article dicts. Never raises."""
+    if src.get("kind") == "news":
+        return fetch_news(src)
     handle = src.get("handle", "")
     url = (f"https://{handle}.substack.com/feed" if src.get("kind") == "substack"
            else handle)
@@ -865,3 +972,82 @@ def neighbours(aid: str) -> dict:
         "newer": rows[i - 1] if i > 0 else None,
         "older": rows[i + 1] if i + 1 < len(rows) else None,
     }
+
+
+# --- the people view --------------------------------------------------------
+
+def person_name(label: str) -> str:
+    """The person, stripped of where they published.
+
+    "Ray Dalio · Principled Perspectives" and the news source "Ray Dalio" are
+    the same human. ⚠ Labels without a person (WisdomTree, BCA Research) pass
+    through unchanged — an institution is a valid row here.
+    """
+    return (label or "").split("·")[0].strip() or label
+
+
+def people(days: int = 90, horizon: str = "") -> list[dict]:
+    """One row per author: how many articles, and what they add up to.
+
+    ⛔ SENTIMENT IS COUNTED, NEVER AVERAGED. Each article contributes one vote
+    per horizon it addresses; the row shows the tally and the article count
+    behind it. An average would turn "two bullish, one bearish" into a number
+    that looks like a measurement of conviction, which nobody measured.
+
+    ⚠ A person with NO call at a horizon is shown as having none. That is the
+    common case — a valuation essayist has no 24-hour view — and it is a fact
+    about them worth seeing, not a gap to fill.
+    """
+    rows = _within(_list_all(), days)
+    by: dict[str, dict] = {}
+    for a in rows:
+        # ⭐ ONE ROW PER PERSON, not per feed. Ray Dalio writes a Substack AND
+        # gets covered in the press; those are two sources and one person.
+        # The name before the "·" is the person; the part after is where.
+        label = person_name(a.get("source_label") or a.get("source") or "—")
+        p = by.setdefault(label, {
+            "label": label, "sources": set(), "articles": 0,
+            "read": 0, "unread": 0, "newest": None, "kind": a.get("kind") or "feed",
+            "horizons": {k: {"bullish": 0, "bearish": 0, "neutral": 0}
+                         for k in HORIZON_KEYS},
+            "overall": {"bullish": 0, "bearish": 0, "neutral": 0},
+        })
+        p["articles"] += 1
+        p["sources"].add(a.get("source_label") or "")
+        if (a.get("published_at") or "") > (p["newest"] or ""):
+            p["newest"] = a.get("published_at")
+        rd = a.get("read")
+        if not isinstance(rd, dict) or "calls" not in rd:
+            p["unread"] += 1
+            continue
+        p["read"] += 1
+        b = (rd.get("bias") or "neutral").lower()
+        if b in p["overall"]:
+            p["overall"][b] += 1
+        for c in (rd.get("calls") or []):
+            h, cb = c.get("horizon"), (c.get("bias") or "neutral").lower()
+            if h in p["horizons"] and cb in p["horizons"][h]:
+                p["horizons"][h][cb] += 1
+
+    out = []
+    for p in by.values():
+        p["sources"] = sorted(x for x in p["sources"] if x)
+        p["own_feed"] = any("·" in x for x in p["sources"])
+        tally = p["horizons"].get(horizon) if horizon else p["overall"]
+        tally = tally or {"bullish": 0, "bearish": 0, "neutral": 0}
+        n = sum(tally.values())
+        if horizon and n == 0:
+            p["lean"] = None          # genuinely silent at this horizon
+        else:
+            p["lean"] = (max(tally, key=tally.get) if n else None)
+        p["tally"] = tally
+        p["votes"] = n
+        # which horizons this person speaks to at all
+        p["speaks"] = [k for k in HORIZON_KEYS if sum(p["horizons"][k].values())]
+        out.append(p)
+
+    # Loudest first at the chosen horizon, then by article count. A person with
+    # no view at this horizon sorts last rather than being hidden.
+    out.sort(key=lambda r: (r["votes"] == 0, -r["votes"], -r["articles"],
+                            r["label"].lower()))
+    return out
