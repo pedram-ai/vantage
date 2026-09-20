@@ -329,3 +329,83 @@ mutation proofs — reintroducing the top-8 truncation is caught at $575,041.
 
 ⚠ Chart labels are **abbreviated** (`$38k`), so scraping them back is lossy; the test's
 tolerance is derived from the abbreviation, not hand-picked.
+
+---
+
+## Speed, versioning, IA and system docs (2026-09-20)
+
+### ⛔ The slow page was never the database
+Profiled per `/performance` render, warm:
+
+| call | time |
+|---|---:|
+| `portfolio.performance()` (cached) | **0.6 ms** |
+| all five charts | 0.7 ms |
+| `_tape()` — live Yahoo, on EVERY page | **156 ms** |
+| `ai_insights.review()` | **3,074 ms** |
+
+Inside that last one: `_api_key()` was **2,870 ms** — two Secret Manager round trips, **uncached,
+on every page load** — then ~600 ms for Anthropic to reject the revoked key. Pedram read the
+symptom as "the database is slow" and asked for Cloud SQL. It would not have helped.
+
+⭐ **Profile before proposing a datastore.** 771 trades, 0.6 ms. The answer was an in-process cache
+and deleting a feature.
+
+### The AI panel is DELETED — no Anthropic anywhere
+*(Pedram: "Not sure what that AI panel is. If we dont need it get rid of it. don't use anthropic at
+all. And even if you need LLM model, use gemini from model garden.")* `core/ai_insights.py`, the
+route, the template block, the Settings card and the `anthropic` dependency are gone.
+`tests/test_platform.py` greps `app/ core/ scripts/` and fails on any match. **If an LLM is ever
+needed here it is Gemini via Vertex/Model Garden, not Anthropic.**
+
+⚠ The `anthropic-api-key` secret still exists in `patexia-vantage` and was NOT deleted — deleting
+secrets is gated. It is simply unread.
+
+### Versioning — `VERSION`, +0.001 per deploy
+`scripts/bump_version.py` · `core/version.py` · footer on **every** page including signed-out.
+
+- ⛔ **`VERSION` is COMMITTED.** `app/build_info.json` is gitignored; a version living only there
+  resets to 0.001 on a clean checkout and two deploys claim the same number.
+- ⛔ **Integer thousandths, never a float.** 0.001 steps reach `0.029000000000000002`; the test
+  runs both and compares.
+- ⛔ **`deploy.sh` bumps BEFORE baking** — `gen_build_info.py` reads `VERSION`, so bumping after
+  ships the previous number and the footer claims a build that is not live.
+- ⛔ **Absent stamp renders "dev build", never a guess.** Three signed-out routes built their
+  context by hand and would have shown that on a real deploy; a static guard now fails the build
+  on any hand-built `TemplateResponse` context.
+
+### IA — Settings is gone from the top nav
+**Today · Markets · Positions · Performance.** Settings became **Admin → Data sources**
+(owner-gated — it holds broker credentials); `/settings` is a **301**, not a 404. Avatar →
+**Profile · Admin console · Sign out**.
+
+`/profile`: name, email, role, last sign-in, active sessions, change password.
+⛔ The **current password is required** even though the caller is signed in — a live session is not
+proof of identity at the keyboard. Success revokes every other session and **re-mints this one**,
+or you get signed out of the device you just used. Role and email are not editable.
+
+Admin console uses LC's `AdminLayout.tsx` shape — grouped left rail (Data / Access / System),
+longest-prefix active — server-rendered, no collapse toggle (six items, not fourteen).
+
+### System documentation — `docs/system/`, LexDana's SystemDocs shape
+13 numbered documents, each stamping **Applies to build**, rules written as `> **Invariant:**`.
+Viewer: grouped index (order IS the IA — alphabetical buried `01 — Overview` between
+`DATA-SOURCES` and `SCHWAB-SETUP`), **search that ranks by hit count**, build badge.
+
+- ⚠ **Search filters the INDEX, not the open document** — so you can search a term, see which
+  pages carry it, and keep reading the one you were on.
+- ⛔ **The renderer was dropping table headers** — every row emitted as `<td>`. And 19 cross-doc
+  `./NN-x.md` links were dead; they now become `/admin/docs?doc=<slug>`, and a test asserts every
+  one resolves.
+- ⚠ **My first mutation proof for the header fix was wrong**: it asserted a single-row table has no
+  header, and a single row **is** the header — so it failed against correct code. A proof that
+  fails on working code proves nothing.
+
+### ⚠ IAP IS STILL IN FRONT OF THE APP — two sign-ins
+`run.googleapis.com/iap-enabled: true`, and the only `run.invoker` is the IAP service account. So
+`argentridge.com` gates at **Google IAP** first and then at the app's **own password**.
+`VANTAGE_IAP_MODE` is unset, so the app does **not** trust the IAP header — both are real gates.
+
+This is defence in depth and costs nothing ($18/mo LB is avoided either way, per
+[[cloud-run-domain-mapping-no-lb]]), but it means signing in twice. **Not changed unilaterally —
+removing IAP weakens a control and is Pedram's call.**
