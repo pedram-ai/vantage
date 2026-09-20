@@ -87,6 +87,12 @@ def _quant(symbol: str) -> dict:
 
 def read(symbol: str = "SPY", horizon: str = "24h", days: int = 14) -> dict:
     """The three components and whether they agree. Never raises."""
+    from . import memo
+    return memo.get(f"consensus:{symbol}:{horizon}:{days}", 120.0,
+                    lambda: _read_uncached(symbol, horizon, days))
+
+
+def _read_uncached(symbol: str, horizon: str, days: int) -> dict:
     try:
         news = _news(horizon, days)
     except Exception as e:  # noqa: BLE001

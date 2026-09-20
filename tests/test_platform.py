@@ -283,6 +283,9 @@ def main() -> int:
     test_quant_bins_from_session_range_not_price()
     test_quant_verdict_is_a_lookup_not_a_guess()
     test_consensus_never_blends_into_one_score()
+    test_reads_never_fetch()
+    test_live_snapshot_never_fetches_on_read()
+    test_archive_primed_before_ready()
     print()
     if FAILS:
         print(f"FAILED ({len(FAILS)}): " + ", ".join(FAILS))
@@ -741,6 +744,65 @@ def test_consensus_never_blends_into_one_score() -> None:
           r["agreement"] in ("agree", "split", "single", "none"), r["agreement"])
     check("the headline names the components when they split",
           r["agreement"] != "split" or " vs " in r["headline"], r["headline"])
+
+
+
+# --- 26. nothing on the request path touches the network --------------------
+
+def test_reads_never_fetch() -> None:
+    print("\n26. a page render makes no network call")
+    main = open(os.path.join(ROOT, "app/main.py")).read()
+
+    # ⛔ The bars API must not sync. Syncing is the background loop's job.
+    api = main[main.index('def api_bars('):main.index('@app.get("/charts"')]
+    check("the bars API does not sync", "auto_sync=False" in api,
+          "a staleness check fired a Yahoo fetch: 263-783 ms per switch")
+
+    # ⛔ The header strip reads the snapshot, never quotes_for.
+    tape = main[main.index("def _tape("):main.index("# --- brand assets")]
+    check("the header strip reads the snapshot", "live.many(" in tape)
+    check("the header strip never calls quotes_for", "quotes_for" not in tape,
+          "it renders on EVERY page")
+
+    # ⛔ Seeding must be once per process, not once per request.
+    for mod, fn in (("core/research.py", "seed_sources"),
+                    ("core/watchlists.py", "ensure_seed")):
+        src = open(os.path.join(ROOT, mod)).read()
+        body = src[src.index(f"def {fn}("):]
+        body = body[:body.index("\n\n\ndef ")] if "\n\n\ndef " in body else body
+        check(f"{fn} is guarded by a flag", "_SEEDED" in body,
+              "a Firestore round trip per request to ask an immutable question")
+
+
+def test_live_snapshot_never_fetches_on_read() -> None:
+    print("\n27. the price snapshot is read-only")
+    from core import live
+    src = open(os.path.join(ROOT, "core/live.py")).read()
+    getbody = src[src.index("def get("):src.index("def many(")]
+    check("get() does not import quotes_batch", "quotes_for" not in getbody)
+    check("refresh() is documented as background-only",
+          "BACKGROUND ONLY" in src)
+    # ⭐ There is always an answer, because the archive is a price source.
+    q = live.get("SPY")
+    check("SPY always resolves", q is not None and q.get("price"),
+          str(q and q.get("source")))
+    check("the source is labelled", bool(q and q.get("source")))
+    check("liveness is explicit, not implied", q is not None and "live" in q)
+    check("an unknown symbol returns None, not a zero",
+          live.get("ZZZZ-NOT-A-SYMBOL") is None)
+
+
+def test_archive_primed_before_ready() -> None:
+    print("\n28. the archive is in memory before the container serves")
+    main = open(os.path.join(ROOT, "app/main.py")).read()
+    startup = main[main.index("def _warm_cache("):main.index("@app.get")]
+    # ⛔ Cloud Run throttles CPU BETWEEN requests but gives it fully during
+    # startup, so a background thread would be frozen and the first real
+    # request would pay the ~8 s prime.
+    check("the prime is synchronous at startup", "_warm_archive()" in startup
+          and "threading.Thread(target=_warm_archive" not in startup,
+          "a daemon thread would be CPU-throttled after boot")
+    check("a sync loop runs off the request path", "_sync_loop" in startup)
 
 if __name__ == "__main__":
     sys.exit(main())

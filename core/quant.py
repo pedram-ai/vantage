@@ -159,7 +159,14 @@ def migration(sessions: list[SessionStats], n: int = 3) -> dict:
 
 
 def levels(symbol: str, days: int = 10) -> dict:
-    """Everything the quant tab renders. Never raises."""
+    """Everything the quant tab renders. Never raises. Memoised 120 s —
+    closed sessions never change and the live one moves slowly."""
+    from . import memo
+    return memo.get(f"quant:{symbol}:{days}", 120.0,
+                    lambda: _levels_uncached(symbol, days))
+
+
+def _levels_uncached(symbol: str, days: int = 10) -> dict:
     from . import barstore
 
     try:

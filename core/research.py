@@ -50,13 +50,29 @@ PAYWALL_CHARS = 700
 
 # --- sources ----------------------------------------------------------------
 
+_SEEDED = False
+
+
 def seed_sources() -> None:
-    col = db().collection(SOURCES)
-    if any(True for _ in col.limit(1).stream()):
+    """Create the default sources once, and only once.
+
+    ⚠ This is called at the top of EVERY research page. Before the guard it
+    was a Firestore round trip per request — measured at ~150 ms, the single
+    largest remaining page cost — to ask a question whose answer, once true,
+    can never become false again. Exactly the `ensure_seed()` bug in
+    core/watchlists.py, in a second place.
+    """
+    global _SEEDED
+    if _SEEDED:
         return
+    if all_sources():          # cached read, no round trip once warm
+        _SEEDED = True
+        return
+    col = db().collection(SOURCES)
     for s in SEED_SOURCES:
         col.document(s["id"]).set({**s, "created_at": now_iso()})
     _bust("sources")
+    _SEEDED = True
 
 
 def all_sources() -> list[dict]:
@@ -298,6 +314,10 @@ def refresh(limit_per_source: int = 20) -> dict:
             ref.set(art)
             added += 1
     _bust("articles")
+    # ⛔ Derived views are built from these rows; a new article must not sit
+    # behind a memoised tally.
+    from . import memo
+    memo.bust("outlook:", "people:", "consensus:")
     return {"added": added, "already_had": kept, "at": now_iso()}
 
 
@@ -462,9 +482,18 @@ def _within(rows: list[dict], days: int) -> list[dict]:
     return [r for r in rows if (r.get("published_at") or "") >= cutoff]
 
 
-def timeline(source: str = "", days: int = 0) -> list[dict]:
-    """The left rail: every article newest-first, grouped by month."""
+# ⚠ The rail is a NAVIGATION aid, not the archive. Rendering all 237 articles
+# cost ~150 ms of Jinja per request — the single biggest remaining page cost,
+# and none of it visible without scrolling a long way. Capped, with the total
+# stated underneath so nothing is silently hidden.
+TIMELINE_MAX = 60
+
+
+def timeline(source: str = "", days: int = 0, limit: int = TIMELINE_MAX) -> dict:
+    """The left rail: recent articles newest-first, grouped by month."""
     rows = _within(_list_all(source), days)
+    total = len(rows)
+    rows = rows[:limit]
     out, seen = [], None
     for r in rows:
         month = (r.get("published_at") or "")[:7] or "unknown"
@@ -480,7 +509,7 @@ def timeline(source: str = "", days: int = 0) -> list[dict]:
             "bias": rd.get("bias"), "paywalled": r.get("paywalled"),
             "read": bool(rd),
         })
-    return out
+    return {"rows": out, "shown": len(rows), "total": total}
 
 
 def _month_label(m: str) -> str:
@@ -531,6 +560,13 @@ def _list_all(source: str = "") -> list[dict]:
 
 
 def get_article(aid: str) -> dict | None:
+    """One article. ⚠ Served from the cached collection, not a fresh document
+    read — that was a Firestore round trip per article page (~175 ms) for a
+    row already sitting in memory. Falls back to a direct read only when the
+    id is not in the cache, so a just-written article is still reachable."""
+    for a in _list_all():
+        if a["id"] == aid:
+            return a
     doc = db().collection(ARTICLES).document(aid).get()
     if not doc.exists:
         return None
@@ -773,6 +809,8 @@ def summarise(article: dict, force: bool = False) -> dict:
         "read_model": llm.status().get("model"),
     }, merge=True)
     _bust("articles")
+    from . import memo
+    memo.bust("outlook:", "people:", "consensus:")
     return {"ok": True, "read": out}
 
 
@@ -874,6 +912,12 @@ def _cluster(levels: list[float], tol: float = 1.5) -> list[list[float]]:
 
 
 def outlook(days: int = 10, now_spy: float | None = None) -> dict:
+    from . import memo
+    return memo.get(f"outlook:{days}:{round(now_spy or 0, 1)}", 120.0,
+                    lambda: _outlook_uncached(days, now_spy))
+
+
+def _outlook_uncached(days: int = 10, now_spy: float | None = None) -> dict:
     """What the recent articles, taken together, say about SPY.
 
     ⛔ THIS IS ARITHMETIC OVER WHAT WAS EXTRACTED, NOT A SECOND OPINION. No
@@ -987,6 +1031,12 @@ def person_name(label: str) -> str:
 
 
 def people(days: int = 90, horizon: str = "") -> list[dict]:
+    from . import memo
+    return memo.get(f"people:{days}:{horizon}", 120.0,
+                    lambda: _people_uncached(days, horizon))
+
+
+def _people_uncached(days: int = 90, horizon: str = "") -> list[dict]:
     """One row per author: how many articles, and what they add up to.
 
     ⛔ SENTIMENT IS COUNTED, NEVER AVERAGED. Each article contributes one vote

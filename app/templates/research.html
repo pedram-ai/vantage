@@ -163,7 +163,7 @@
     {# ============ TIMELINE + ARTICLES ============ #}
     <div class="rbody">
       <nav class="tl">
-        {% for t in timeline %}
+        {% for t in timeline.rows %}
         {% if t.heading %}<div class="tlmonth">{{ t.label }}</div>
         {% else %}
         <a class="tli" href="#a{{ t.id }}">
@@ -172,7 +172,10 @@
         </a>
         {% endif %}
         {% endfor %}
-        <p class="faint tlfoot">Hollow dot = paywalled, not read.</p>
+        <p class="faint tlfoot">
+          {% if timeline.total > timeline.shown %}Newest {{ timeline.shown }} of
+          {{ timeline.total }} — narrow the window to reach older ones.<br>{% endif %}
+          Hollow dot = paywalled, not read.</p>
       </nav>
 
       <div>
@@ -202,22 +205,20 @@
           </div>
 
           <aside class="artright">
-            {% if a.viz %}
-              {% set L = a.read.h24 if a.read.h24.shape != 'not stated' else a.read.week %}
-              {% set which = 'Next 24 hours' if a.read.h24.shape != 'not stated' else 'Through Friday' %}
-              {% if L.shape == 'not stated' %}
-                <p class="nostate">No level call in this one.</p>
-              {% else %}
-                <div class="striphead"><span class="lab">{{ which }}</span>
-                  <span class="shape">{{ L.shape }}</span></div>
-                {{ (a.viz.h24 if a.read.h24.shape != 'not stated' else a.viz.week)|safe }}
-                {% if L.activation %}
-                <p class="trigger">on
-                  {% if a.viz.trig[('h24' if a.read.h24.shape != 'not stated' else 'week')].px %}
-                  <b>{{ a.viz.trig[('h24' if a.read.h24.shape != 'not stated' else 'week')].px|safe }}</b>
-                  {% endif %}</p>
-                {% endif %}
+            {% if a.viz and a.viz.calls %}
+              {# The primary call: the shortest horizon this article speaks to.
+                 A daily plan leads with 24h; a valuation essay with 12m. #}
+              {% set L = a.viz.calls[0] %}
+              <div class="striphead"><span class="lab">{{ L.label }}</span>
+                <span class="shape {{ L.bias }}">{{ L.bias }}</span></div>
+              {{ L.strip|safe }}
+              {% if L.trig %}<p class="trigger">on <b>{{ L.trig|safe }}</b></p>{% endif %}
+              {% if a.viz.calls|length > 1 %}
+              <p class="faint morehz">+{{ a.viz.calls|length - 1 }} more horizon{{ '' if a.viz.calls|length == 2 else 's' }}:
+                {{ a.viz.calls[1:] | map(attribute='label') | join(', ') }}</p>
               {% endif %}
+            {% elif a.viz %}
+              <p class="nostate">Read, but it makes no level call.</p>
             {% elif a.paywalled %}
               <p class="nostate">Behind the paywall — open to paste it in.</p>
             {% else %}

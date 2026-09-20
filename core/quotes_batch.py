@@ -79,6 +79,30 @@ def _from_yahoo(symbols: list[str]) -> dict[str, dict]:
     return out
 
 
+def quotes_for_snapshot(symbols: list[str]) -> dict:
+    """The snapshot shape, from memory. ⛔ Never fetches.
+
+    Same contract as `quotes_for` so the templates do not change, but every
+    value comes from core.live — which the background loop keeps current.
+    """
+    from . import live
+    snap = live.many(symbols)
+    return {
+        "quotes": {s: {"price": q.get("price"),
+                       "change_pct": q.get("change_pct"),
+                       "source": q.get("source"),
+                       "source_label": ("Schwab · real time" if q.get("source") == "schwab"
+                                        else "Yahoo · 10-min delayed" if q.get("live")
+                                        else "last archived bar"),
+                       "live": q.get("live")}
+                   for s, q in snap.items()},
+        "degraded": [s for s in symbols if s not in snap],
+        "cap": None,
+        "from_snapshot": True,
+        "age_seconds": live.age_seconds(),
+    }
+
+
 def quotes_for(symbols: list[str], fresh: bool = False) -> dict:
     """{'quotes': {SYM: {...}}, 'source': 'schwab'|'yahoo', 'degraded': bool}"""
     symbols = [s.strip().upper() for s in symbols if s and s.strip()]

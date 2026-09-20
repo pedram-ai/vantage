@@ -64,25 +64,24 @@
           <span class="refv">{{ viz.ref|safe }}</span>
         </div>
 
-        {% for key, title in [('h24','Next 24 hours'), ('week','Through Friday')] %}
-        {% set L = a.read[key] %}
+        {% for L in viz.calls %}
         <div class="strip">
-          <div class="striphead"><span class="lab">{{ title }}</span>
-            <span class="shape {{ 'none' if L.shape == 'not stated' }}">{{ L.shape }}</span></div>
-          {% if L.shape == 'not stated' %}
-            <p class="nostate">{{ L.note or 'Not addressed in this article.' }}</p>
-          {% else %}
-            {{ viz[key]|safe }}
-            {% if L.activation %}
-            <p class="trigger">Activates on
-              {% if viz.trig[key] %}<b>{{ viz.trig[key]|safe }}</b> —{% endif %}
-              <span class="muted">{{ L.activation }}</span></p>
-            {% endif %}
-            {% if L.note %}<p class="note">{{ L.note }}</p>{% endif %}
-            {% if L.basis %}<p class="basis">&ldquo;{{ L.basis }}&rdquo;</p>{% endif %}
+          <div class="striphead"><span class="lab">{{ L.label }}</span>
+            <span class="shape {{ L.bias }}">{{ L.bias }} · {{ L.shape }}</span></div>
+          {{ L.strip|safe }}
+          {% if L.activation %}
+          <p class="trigger">Activates on
+            {% if L.trig %}<b>{{ L.trig|safe }}</b> —{% endif %}
+            <span class="muted">{{ L.activation }}</span></p>
           {% endif %}
+          {% if L.note %}<p class="note">{{ L.note }}</p>{% endif %}
+          {% if L.basis %}<p class="basis">&ldquo;{{ L.basis }}&rdquo;</p>{% endif %}
         </div>
         {% endfor %}
+        {% if not viz.calls %}
+        <p class="nostate">This article makes no level call at any horizon —
+          correct for a piece with no market view.</p>
+        {% endif %}
 
         {% if viz.levels %}
         <div class="lab" style="margin-bottom:5px">Every level named</div>

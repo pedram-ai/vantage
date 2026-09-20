@@ -21,7 +21,7 @@ from core import auth, portfolio, store, watchlists
 from core.charts import TIMEFRAMES
 from core.glossary import GLOSSARY
 from core.portfolio import PERIODS
-from core.quotes_batch import quotes_for
+from core.quotes_batch import quotes_for, quotes_for_snapshot
 from core.symbol_view import build_symbol, build_today
 
 ALLOWED = {e.strip().lower() for e in
@@ -44,6 +44,43 @@ def _warm_cache() -> None:
     """
     import threading
 
+    def _warm_archive():
+        from core import barstore
+        for sym in ("SPY", "ES=F"):
+            for iv in barstore.INTERVALS:
+                barstore.read_store(sym, iv)
+
+    def _sync_loop():
+        """Keep the archive current OFF the request path.
+
+        ⚠ Every 5 minutes, and `sync` itself no-ops when nothing can have
+        changed, so a closed market costs one cheap check per interval rather
+        than a fetch.
+        """
+        import time as _t
+        from core import barstore
+        from core import live, watchlists
+        ticks = 0
+        while True:
+            _t.sleep(60)
+            ticks += 1
+            # Quotes every minute; the bar archive every five. Both here so a
+            # request never waits on either.
+            try:
+                syms = list(dict.fromkeys(
+                    ["SPY", "ES"] + watchlists.all_tracked_symbols()))[:12]
+                live.refresh(syms)
+            except Exception:  # noqa: BLE001
+                pass
+            if ticks % 5:
+                continue
+            for sym in ("SPY", "ES=F"):
+                for iv in barstore.INTERVALS:
+                    try:
+                        barstore.sync(sym, iv)
+                    except Exception:  # noqa: BLE001
+                        pass
+
     def go():
         # Each in its own try: a failing warm-up must never stop the others,
         # and none of them may stop the app from starting.
@@ -58,15 +95,28 @@ def _warm_cache() -> None:
             # ⚠ The daily archive backs the ES→SPY ratio on every article
             # card. Reading it here moves a ~6 s cold read off the first
             # request that happens to need it.
-            lambda: __import__("core.barstore", fromlist=["x"]).read_store("SPY", "1d"),
-            lambda: __import__("core.barstore", fromlist=["x"]).read_store("ES=F", "1d"),
+            # ⭐ PRIME THE WHOLE ARCHIVE. Measured: each (symbol, interval) is
+            # 250-1,200 ms cold from GCS and 0.1 ms warm, and all 14 pairs
+            # together are 93 MB — well inside the 512 MiB limit. Loading them
+            # here costs ~8 s once at boot and makes every interval switch a
+            # memory lookup instead of a network round trip.
         ):
             try:
                 warm()
             except Exception:  # noqa: BLE001
                 pass
 
+    # ⛔ THE ARCHIVE PRIME IS SYNCHRONOUS. Cloud Run grants full CPU during
+    # container startup and throttles it between requests afterwards, so a
+    # background thread would be frozen and the first real request would pay
+    # the 8 s. Doing it here means the container is not marked ready until
+    # every bar is in memory.
+    try:
+        _warm_archive()
+    except Exception:  # noqa: BLE001
+        pass
     threading.Thread(target=go, daemon=True).start()
+    threading.Thread(target=_sync_loop, daemon=True).start()
 
 
 
@@ -194,9 +244,11 @@ def _tape() -> list[dict]:
     if _TAPE_CACHE and now - _TAPE_CACHE[0] < _TAPE_TTL:
         return _TAPE_CACHE[1]
     try:
+        from core import live
         syms = watchlists.all_tracked_symbols()[:3]
-        b = quotes_for(syms)
-        out = [{"symbol": s, "price": b["quotes"].get(s, {}).get("price")} for s in syms]
+        snap = live.many(syms)
+        out = [{"symbol": s, "price": (snap.get(s) or {}).get("price"),
+                "live": (snap.get(s) or {}).get("live")} for s in syms]
     except Exception:  # noqa: BLE001
         out = []
     _TAPE_CACHE = (now, out)
@@ -262,8 +314,12 @@ def today(request: Request, list: str = "", refresh: int = 0):
     lists = watchlists.all_lists()
     current = watchlists.get(list) if list else (lists[0] if lists else None)
     symbols = current.get("symbols", []) if current else []
-    brief = build_today(symbols, fresh=bool(refresh))
-    batch = quotes_for(symbols, fresh=bool(refresh))
+    from core import memo
+    brief = (build_today(symbols, fresh=True) if refresh else
+             memo.get("today:" + ",".join(symbols), 60.0,
+                      lambda: build_today(symbols, fresh=False)))
+    batch = (quotes_for(symbols, fresh=True) if refresh
+             else quotes_for_snapshot(symbols))
     return templates.TemplateResponse(request, "today.html", _ctx(request, **{
         "brief": brief, "page": "today", "tape": _tape(),
         "list_id": current.get("id") if current else None,
@@ -279,6 +335,38 @@ def api_symbols(request: Request, q: str = ""):
     check_user(request)
     from core import symbol_search
     return {"q": q, "results": symbol_search.search(q)}
+
+
+@app.get("/api/bars")
+def api_bars(request: Request, symbol: str = "SPY", interval: str = "1d",
+             bars: int = 400):
+    """Bars as JSON, so switching interval never reloads the page.
+
+    ⚠ This is why the chart feels instant: a full page render re-ran the
+    combined read, the quant levels and the article list to change a
+    timeframe. Now the page loads once and the canvas refetches ~40 KB.
+    """
+    check_user(request)
+    from core import barstore
+    symbol = (symbol or "SPY").upper()
+    yah = CHART_SYMBOLS.get(symbol, "SPY")
+    if interval not in barstore.INTERVALS and interval not in barstore.DERIVED:
+        interval = "1d"
+    n = max(60, min(int(bars or 400), 3000))
+    # ⛔ auto_sync=False. A READ MUST NEVER TOUCH THE NETWORK. With it on,
+    # every interval switch ran a staleness check that fired a Yahoo fetch and
+    # cost 263-783 ms — the exact "still slow" complaint. Syncing is a
+    # background job and the Sync button; serving is a memory lookup.
+    rows, info = barstore.bars_for(yah, interval, n, auto_sync=False)
+    return {
+        "symbol": symbol, "interval": interval,
+        "bars": [[int(b.ts.timestamp()), round(b.open, 4), round(b.high, 4),
+                  round(b.low, 4), round(b.close, 4), int(b.volume or 0)]
+                 for b in rows],
+        "derived_from": info.get("derived_from"),
+        "held": barstore.coverage(yah, interval if interval in barstore.INTERVALS
+                                  else barstore.DERIVED[interval][0])["bars"],
+    }
 
 
 @app.get("/charts", response_class=HTMLResponse)
@@ -322,6 +410,35 @@ def charts_sync(request: Request, symbol: str = Form("SPY")):
     return RedirectResponse(f"/charts?symbol={symbol}", status_code=303)
 
 
+def _article_viz(a: dict, r: dict, spy_now: float | None) -> dict:
+    """Every SVG and converted price for one article card."""
+    from core import convert, read_viz
+    unit = r.get("quoted_in") or "SPY"
+    ar = convert.ratio_on((a.get("published_at") or "")[:10])
+    return {
+        "h24": read_viz.strip(r.get("horizons", {}).get("24h") or {},
+                              r["spy_ref"], spy_now, "next 24 hours", unit, ar),
+        "week": read_viz.strip(r.get("horizons", {}).get("1w") or {},
+                               r["spy_ref"], spy_now, "this week", unit, ar),
+        "bias": read_viz.bias_bar(r.get("bias"), r.get("conviction")),
+        "unit": unit, "ratio": round(ar.get("es_spy", 0), 4),
+        "asof": ar.get("asof"),
+        "ref": read_viz._px(r["spy_ref"], unit, ar),
+        "levels": [{"label": l.get("label", ""), "kind": l.get("kind", "other"),
+                    "px": read_viz._px(l["spy"], unit, ar)}
+                   for l in (r.get("levels") or [])[:8]],
+        "calls": [
+            {**c,
+             "label": __import__("core.research", fromlist=["x"]).HORIZON_LABEL.get(
+                 c.get("horizon"), c.get("horizon")),
+             "strip": read_viz.strip(c, r["spy_ref"], spy_now,
+                                     c.get("horizon", ""), unit, ar),
+             "trig": (read_viz._px(c["spy_activation"], unit, ar)
+                      if c.get("spy_activation") is not None else None)}
+            for c in (r.get("calls") or [])],
+    }
+
+
 # --- Research ---------------------------------------------------------------
 
 @app.get("/research", response_class=HTMLResponse)
@@ -338,31 +455,17 @@ def research_page(request: Request, tab: str = "articles", source: str = "",
     # ⛔ All arithmetic happens here, never in the template. Each article is
     # converted with ITS OWN publication-date ratio, so two cards on one page
     # legitimately use different numbers.
+    from core import memo
     for a in feed["rows"]:
         r = a.get("read") or {}
         if r.get("spy_ref") is None:
             continue
-        unit = r.get("quoted_in") or "SPY"
-        ar = convert.ratio_on((a.get("published_at") or "")[:10])
-        a["viz"] = {
-            "h24": read_viz.strip(r.get("h24"), r["spy_ref"], spy_now,
-                                  "next 24 hours", unit, ar),
-            "week": read_viz.strip(r.get("week"), r["spy_ref"], spy_now,
-                                   "this week", unit, ar),
-            "bias": read_viz.bias_bar(r.get("bias"), r.get("conviction")),
-            "unit": unit,
-            "ratio": round(ar.get("es_spy", 0), 4),
-            "asof": ar.get("asof"),
-            "levels": [
-                {"label": l.get("label", ""),
-                 "px": read_viz._px(l["spy"], unit, ar)}
-                for l in (r.get("levels") or [])[:8]],
-            "trig": {
-                k: {"px": (read_viz._px(leg[f"spy_{k2}"], unit, ar)
-                           if leg.get(f"spy_{k2}") is not None else None)
-                    for k2 in ("activation",)}
-                for k, leg in (("h24", r.get("h24") or {}), ("week", r.get("week") or {}))},
-        }
+        # ⚠ The SVG for one article depends only on its stored read and the
+        # live SPY price, so it is memoised on both. Rebuilding 12 articles'
+        # strips per request was 210 ms of pure string work.
+        a["viz"] = memo.get(
+            f"viz:{a['id']}:{a.get('read_at','')}:{round(spy_now or 0, 1)}",
+            300.0, lambda a=a, r=r: _article_viz(a, r, spy_now))
     return templates.TemplateResponse(request, "research.html", _ctx(request, **{
         "page": "research", "tape": _tape(), "tab": tab,
         "articles": feed["rows"], "feed": feed, "sources": research.all_sources(),
@@ -495,7 +598,9 @@ def markets(request: Request, list: str = "", refresh: int = 0):
     current = watchlists.get(list) if list else None
     if current is None:
         current = lists[0] if lists else {"id": "", "name": "—", "symbols": [], "auto": True}
-    batch = quotes_for(current.get("symbols", []), fresh=bool(refresh))
+    syms_now = current.get("symbols", [])
+    batch = (quotes_for(syms_now, fresh=True) if refresh
+             else quotes_for_snapshot(syms_now))
     return templates.TemplateResponse(request, "markets.html", _ctx(request, **{
         "lists": lists, "autolists": autolists, "current": current,
         "batch": batch, "page": "markets", "tape": _tape(),
