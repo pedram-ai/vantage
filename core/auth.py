@@ -206,7 +206,7 @@ def request_reset(email: str) -> bool:
         subject, html = mail_templates.reset(
             u.get("name") or email.split("@")[0],
             f"{base}/setup/{token}", SETUP_TOKEN_HOURS)
-        res = send_html(email, subject, html)
+        res = send_html(email, subject, html, kind="password_reset")
         return bool(res.get("ok"))
     except Exception:  # noqa: BLE001
         return False
@@ -222,7 +222,7 @@ def send_invite(email: str, token: str) -> bool:
         subject, html = mail_templates.invite(
             u.get("name") or email.split("@")[0],
             f"{base}/setup/{token}", SETUP_TOKEN_HOURS)
-        return bool(send_html(email, subject, html).get("ok"))
+        return bool(send_html(email, subject, html, kind="invite").get("ok"))
     except Exception:  # noqa: BLE001
         return False
 

@@ -28,7 +28,7 @@ def main() -> int:
     email_result = {"skipped": True, "reason": "weekend - no email Sat/Sun"}
     if not is_weekend or force:
         subject, html = render_email(run)
-        email_result = send_html(RECIPIENT, subject, html)
+        email_result = send_html(RECIPIENT, subject, html, kind="daily_map")
         if run.get("run_id"):
             store.db().collection("runs").document(run["run_id"]).set(
                 {"email": email_result, "email_subject": subject,

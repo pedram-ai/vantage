@@ -53,7 +53,39 @@ def _sigv4_headers(access_key: str, secret_key: str, host: str, path: str,
     }
 
 
-def send_html(to: str, subject: str, html: str) -> dict:
+def _archive(to: str, subject: str, html: str, kind: str, result: dict) -> None:
+    """Record every outbound email so Admin -> Sent email shows what went out.
+
+    ⛔ SETUP/RESET TOKENS ARE REDACTED. The archive answers "what was sent",
+    and an admin browsing it must not be able to lift a live password-reset
+    link out of someone else's email and use it.
+    """
+    try:
+        import re as _re
+        from .store import db, now_iso
+        safe = _re.sub(r"(/setup/)[A-Za-z0-9_\-]{16,}", r"\1[redacted]", html)
+        db().collection("emails").document().set({
+            "to": to, "subject": subject, "kind": kind,
+            "html": safe,
+            "redacted": safe != html,
+            "ok": bool(result.get("ok")),
+            "skipped": bool(result.get("skipped")),
+            "reason": result.get("reason") or result.get("error"),
+            "message_id": result.get("message_id"),
+            "sent_at": now_iso(),
+            "from": FROM,
+        })
+    except Exception:  # noqa: BLE001
+        pass  # archiving must never break a send
+
+
+def send_html(to: str, subject: str, html: str, kind: str = "other") -> dict:
+    res = _send_html(to, subject, html)
+    _archive(to, subject, html, kind, res)
+    return res
+
+
+def _send_html(to: str, subject: str, html: str) -> dict:
     ak = os.environ.get("AWS_ACCESS_KEY_ID")
     sk = os.environ.get("AWS_SECRET_ACCESS_KEY")
     if not (ak and sk):

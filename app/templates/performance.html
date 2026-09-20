@@ -75,9 +75,52 @@
       <div><h3 style="margin:0">Open</h3>
         <div class="fig {{ 'up' if perf.open_pnl > 0 else 'down' }}" style="font-size:19px;font-weight:620">
           {{ perf.open_pnl|money(0, true) }}</div></div>
-      <div><h3 style="margin:0">Fees</h3>
+      <div><h3 style="margin:0">Fees <span style="text-transform:none;font-weight:400">(already deducted)</span></h3>
         <div class="fig" style="font-size:19px;font-weight:620">{{ perf.fees|money(0) }}</div></div>
     </div>
+  </div>
+</div>
+
+{% if ai and ai.ok %}
+<div class="card">
+  <h2>What the numbers show <span class="faint">AI review of the figures below</span></h2>
+  <p style="font-size:15px;font-weight:600;margin-bottom:12px">{{ ai.headline }}</p>
+  {% for o in ai.observations %}
+  <div style="border-left:3px solid {{ '#2f9e8f' if o.tone=='good' else ('#c0563f' if o.tone=='bad' else 'var(--line)') }};
+              padding:2px 0 2px 13px;margin-bottom:12px">
+    <b style="font-family:var(--soft);font-size:13.5px">{{ o.title }}</b>
+    <div class="muted" style="font-size:13.5px">{{ o.detail }}</div>
+    <div class="faint">from: {{ o.figure }}</div>
+  </div>
+  {% endfor %}
+  <p class="faint">Written by {{ ai.model }} from the aggregate figures on this page — it is
+    given no individual trades, and each point cites the figure it rests on.
+    Informational, not advice.</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Cumulative realized P&amp;L <span class="faint">{{ perf.label }} · running total across
+    {{ perf.n_trades }} closed trades</span></h2>
+  {{ charts.equity|safe }}
+</div>
+
+<div class="card">
+  <h2>By month <span class="faint">bars above the line are profitable months</span></h2>
+  {{ charts.monthly|safe }}
+</div>
+
+<div class="cols">
+  <div class="card">
+    <h2>Where the money went</h2>
+    {{ charts.fees|safe }}
+    <p class="faint" style="margin-top:8px">
+      <b>Fees are already deducted from net realized.</b> The gross bar is what the
+      trades made before costs.</p>
+  </div>
+  <div class="card">
+    <h2>By instrument</h2>
+    {{ charts.by_symbol|safe }}
   </div>
 </div>
 
@@ -106,6 +149,7 @@
   </div>
   <div class="card">
     <h2>By setup <span class="faint">which zone it was taken on</span></h2>
+    {{ charts.by_zone|safe }}
     <div class="tscroll"><table>
       <thead><tr><th>Zone</th><th class="r">Trades</th><th class="r">Win rate</th><th class="r">Net</th></tr></thead>
       <tbody>{% for r in perf.by_zone %}

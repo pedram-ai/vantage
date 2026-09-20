@@ -280,11 +280,22 @@ def cash_page(request: Request):
 
 
 @app.get("/performance", response_class=HTMLResponse)
-def performance_page(request: Request, period: str = "month"):
+def performance_page(request: Request, period: str = "month", ai: int = 1):
     check_user(request)
+    from core import perf_charts
     perf = portfolio.performance(period)
+    trades = perf.get("trades") or []
+    from core import ai_insights
+    charts = {
+        "equity": perf_charts.equity_curve(trades),
+        "monthly": perf_charts.monthly_bars(trades),
+        "by_symbol": perf_charts.category_bars(perf.get("by_symbol") or []),
+        "by_zone": perf_charts.category_bars(perf.get("by_zone") or []),
+        "fees": perf_charts.gross_vs_fees(perf.get("realized", 0), perf.get("fees", 0)),
+    }
     return templates.TemplateResponse(request, "performance.html", _ctx(request, **{
-        "perf": perf, "page": "performance", "tape": _tape(),
+        "perf": perf, "charts": charts, "page": "performance", "tape": _tape(),
+        "ai": ai_insights.review(perf) if ai else None,
     }))
 
 
@@ -334,6 +345,7 @@ def settings_page(request: Request):
     return templates.TemplateResponse(request, "settings.html", _ctx(request, **{
         "s": store.get_settings(), "page": "settings", "tape": _tape(),
         "schwab": schwab.status(), "conn": portfolio.is_connected(),
+        "ai": __import__("core.ai_insights", fromlist=["x"]).status(),
         "redirect_uri": _redirect_uri(request),
     }))
 
@@ -342,6 +354,16 @@ def settings_page(request: Request):
 def save_settings(request: Request, contract_override: str = Form("")):
     check_user(request)
     store.save_settings({"contract_override": contract_override.strip().upper() or None})
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/ai")
+def save_ai_key(request: Request, api_key: str = Form("")):
+    """Pedram's own Anthropic key -> Secret Manager. Never echoed back."""
+    require_owner(request)
+    from core import ai_insights, schwab
+    if api_key.strip():
+        schwab.write_secret(ai_insights.SECRET_NAME, api_key.strip())
     return RedirectResponse("/settings", status_code=303)
 
 

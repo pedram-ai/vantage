@@ -232,3 +232,47 @@ in the same image as the code and cannot drift.
 - ⚠ Finder/iCloud keeps regenerating `Name 2.md` byte-identical duplicates. They are
   deleted and also **filtered defensively** in `list_docs()`, because deleting alone has
   not held.
+
+---
+
+## Performance charts, AI review, sent-email archive (2026-09-20)
+
+### Charts — `core/perf_charts.py`
+Server-rendered SVG, no JS. Equity curve, monthly diverging bars, gross-vs-fees, by-category.
+
+⚠ **The obvious green/red pair FAILS colour-vision separation** — `#35875c` vs `#c05b4d` is
+ΔE **5.9** under protanopia against a floor of 8. Validated with the dataviz palette checker,
+not guessed. Shipped pair is **`#2f9e8f` / `#c0563f`** (teal-green vs orange-red): all six
+checks pass in both light and dark (worst CVD ΔE 10.6 deutan, normal-vision 23.9). Position is
+a redundant encoding everywhere — bars sit above/below zero and values carry a sign.
+
+⚠ **The equity fill switches hue AT THE ZERO LINE.** Tinting the whole area by the ENDING
+value made a genuinely profitable stretch render red.
+
+⛔ **Never name a template-facing dict key `items`** — in Jinja `cost.items` resolves to
+`dict.items` (the method) and the page dies with `'builtin_function_or_method' object is not
+iterable`. Same trap for `keys`, `values`, `get`.
+
+### AI review — `core/ai_insights.py`, on `/performance`
+`claude-opus-5` via the official SDK with structured outputs.
+
+⛔ **The model NEVER sees raw trades.** `build_payload()` passes only already-computed
+aggregates, and the schema forces a `figure` field per observation quoting the exact value it
+reasoned from — rendered next to the text, so a fabricated number is visible rather than
+plausible. Cached per (period, data fingerprint): re-runs only when the numbers move.
+
+⚠ **The shared `lexdana/anthropic-api-key` is REVOKED (401 as of 2026-09-20).** Key lookup is
+env → `patexia-vantage/anthropic-api-key` → `lexdana/...`, Vantage's own first so a key pasted
+in Settings overrides the rotated shared one. With no valid key the panel simply does not
+render — it never shows an error.
+
+### Sent email — every send archived
+`mailer.send_html(to, subject, html, kind=...)` wraps the real sender and writes to the
+`emails` collection. Archiving is at that single choke point, so nothing can send unlogged.
+⛔ **Setup/reset tokens are REDACTED in the archive** (`/setup/<token>` → `/setup/[redacted]`)
+— an admin browsing sent mail must not be able to lift a live password-reset link.
+
+### Self-service password reset
+`/forgot` emails a single-use link. ⛔ The confirmation is **byte-identical** for known and
+unknown addresses (no user enumeration), and a *requested* reset no longer clears the existing
+password — otherwise anyone who can trigger one could lock the owner out.

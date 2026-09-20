@@ -38,6 +38,21 @@
   {% endif %}
 </div>
 
+<div class="card">
+  <h2>AI review</h2>
+  <p class="muted">Claude reads the aggregate figures on the Performance page and writes
+    observations. It never sees individual trades.</p>
+  <p>{% if ai.configured %}<span class="chip call">Key configured</span>
+     {% else %}<span class="chip off">No key</span>{% endif %}</p>
+  <form class="inline" method="post" action="/settings/ai">
+    <input name="api_key" type="password" placeholder="Anthropic API key" style="width:280px"
+           autocomplete="off">
+    <button class="btn" type="submit">Save</button>
+  </form>
+  <p class="faint">From console.anthropic.com → API keys. Stored in Secret Manager, never
+    displayed again. Overrides the shared LexDana key.</p>
+</div>
+
 <div class="card" id="import">
   <h2>Trade history</h2>
   <p class="muted">Schwab's API only reaches back 60 days, so a CSV export is the only route to

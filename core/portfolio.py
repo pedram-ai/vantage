@@ -248,6 +248,6 @@ def performance(period: str = "month") -> dict:
         "avg_loss": (sum(float(t["pnl"]) for t in losses) / len(losses)) if losses else None,
         "by_symbol": finish(by_symbol),
         "by_zone": finish(by_zone),
-        "trades": trades[:200],
+        "trades": trades,
         "empty": not trades and not positions,
     }
