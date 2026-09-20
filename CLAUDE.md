@@ -276,3 +276,56 @@ render — it never shows an error.
 `/forgot` emails a single-use link. ⛔ The confirmation is **byte-identical** for known and
 unknown addresses (no user enumeration), and a *requested* reset no longer clears the existing
 password — otherwise anyone who can trigger one could lock the owner out.
+
+---
+
+## Performance page fixes (2026-09-20)
+
+### ⛔ The by-instrument chart was hiding money
+`category_bars` drew `rows[:8]` from a list sorted by **signed** P&L, so it kept the
+winners and dropped the losers. Live on the real book it showed SPY +$38k / UCO +$31k
+and omitted **QQQ −$240,600, SQQQ −$298,641, TQQQ −$36,247** — **−$575,488 invisible**
+beside a total that read −$519,390. Pedram spotted it: *"on the left you are talking
+about $500K loss but the right side doesn't add up."*
+
+Now ranked by **absolute** value, and whatever is still folded has its **count and its
+remainder drawn on the chart**. A truncated chart must never look complete. Same failure
+family as [[wrong-shape-yields-plausible-nothing]].
+
+### ⚠ Period switching was 3.5 s — Firestore, not BigQuery
+Every period click re-streamed the whole `trades` + `cash` collections and recomputed.
+There is no BigQuery anywhere in this app and it does not need a second database: 771
+trades fit in memory.
+
+`core/portfolio._all(name)` caches each collection in process (TTL 600 s, returns copies
+so callers cannot corrupt it). `trades_between` is now an in-memory filter.
+**3,507 ms → 1–3 ms**, measured.
+
+- ⛔ **`portfolio.invalidate()` is called by the importer**, at the end of `jobs/import_schwab.run()`.
+  The TTL is only a backstop for a writer someone forgets to wire up — a cached P&L that
+  outlives an import is exactly the wrong-number-on-a-money-screen failure this repo refuses.
+- ⚠ `trades_between` bounds are **inclusive at both ends**, matching the Firestore
+  `>= / <=` query it replaced. It relies on `closed_on` being a `YYYY-MM-DD` **string**
+  so string order is date order; a datetime there would silently return the wrong period.
+- Cache is primed by a daemon thread in `@app.on_event("startup")`, fail-soft, so the
+  first page load doesn't pay the read.
+
+### Trades pagination
+50/page. ⛔ `perf["trades"]` is the current page; **`perf["all_trades"]` is the full
+period** and is what the charts and the AI payload read — paging the table must not
+reshape the analysis beside it.
+
+### "By setup" is honest now
+It is the action-map zone (dip / fade / breakout / breakdown). Schwab's export carries no
+zone, so every imported trade is `zone: None` → "Outside the map", which read like a
+verdict on the trading. The page now says the zone wasn't recorded and that it fills in
+going forward, instead of drawing a one-bar chart.
+
+### `tests/test_portfolio_cache.py`
+Cached filter asserted **id-for-id against the original Firestore query** (5 windows incl.
+a single day and an empty range), paging proven lossless (771 paged = 771 unique = 771
+total), chart reconciled to the period total within label-rounding tolerance. Three
+mutation proofs — reintroducing the top-8 truncation is caught at $575,041.
+
+⚠ Chart labels are **abbreviated** (`$38k`), so scraping them back is lossy; the test's
+tolerance is derived from the abbreviation, not hand-picked.
