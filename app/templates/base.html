@@ -80,6 +80,45 @@ main{max-width:1120px;margin:20px auto;padding:0 20px 24px;}
   margin-bottom:1px;}
 .railitem:hover{background:var(--line-soft);color:var(--ink);}
 .railitem.on{background:var(--accent);color:#fff;}
+/* Documentation page — LexDana's SystemDocs layout, server-rendered. */
+.dochead{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;
+  flex-wrap:wrap;margin-bottom:16px;}
+.dochead h1{margin:0 0 5px;} .dochead p{max-width:620px;margin:0;font-size:13px;}
+.buildbadge{flex:none;border:1px solid var(--line);background:var(--card);border-radius:999px;
+  padding:6px 13px;font-family:var(--soft);font-size:11.5px;color:var(--muted);
+  display:flex;gap:8px;align-items:center;}
+.buildbadge b{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums;}
+.buildbadge .fig{font-size:10.5px;color:var(--faint);}
+.docwrap{display:grid;grid-template-columns:262px minmax(0,1fr);gap:18px;align-items:start;}
+.docindex{position:sticky;top:16px;background:var(--card);border:1px solid var(--line);
+  border-radius:14px;padding:10px;}
+.docsearch{position:relative;margin-bottom:9px;}
+.docsearch input{width:100%;font-size:13px;padding:7px 26px 7px 11px;}
+.clearq{position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--faint);
+  text-decoration:none;font-size:15px;line-height:1;}
+.clearq:hover{color:var(--ink);}
+.docgroup{margin-top:11px;}
+.docindex .li{align-items:center;padding:6px 11px;}
+.docindex .li .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.docindex .li .hits{flex:none;background:var(--line);color:var(--muted);border-radius:999px;
+  padding:0 6px;font-size:10px;font-variant-numeric:tabular-nums;}
+.docindex .li.on .hits{background:rgba(255,255,255,.28);color:#fff;}
+.indexfoot{border-top:1px solid var(--line);margin:11px 0 0;padding:9px 11px 2px;font-size:11px;}
+.doccard{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:26px 30px;}
+.doccard .md h1{font-size:22px;margin:0 0 10px;}
+.doccard .md h2{margin-top:26px;border-bottom:1px solid var(--line-soft);padding-bottom:6px;}
+.doccard .md blockquote{margin:14px 0;border-left:3px solid var(--accent);
+  background:var(--accent-soft);border-radius:0 10px 10px 0;padding:10px 15px;}
+.doccard .md blockquote p{margin:3px 0;font-size:13px;}
+.doccard .md thead th{background:var(--paper);font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted);white-space:nowrap;}
+.docsrc{border-top:1px solid var(--line);margin-top:26px;padding-top:11px;font-size:11px;}
+@media(max-width:900px){
+  .docwrap{grid-template-columns:1fr;}
+  .docindex{position:static;}
+  .doccard{padding:20px;}
+}
 @media(max-width:760px){
   .adminwrap{flex-direction:column;gap:14px;}
   .adminrail{position:static;flex:none;width:100%;display:flex;flex-wrap:wrap;gap:6px;}

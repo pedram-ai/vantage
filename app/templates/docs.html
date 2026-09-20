@@ -1,33 +1,72 @@
 {% extends "admin_base.html" %}
 {% block title %}Documentation · Argent Ridge{% endblock %}
+{#
+  Admin -> Documentation. Shape from LexDana's SystemDocs.tsx: a sticky left
+  index with a search box ranked by hit count, the rendered document beside it,
+  and a badge naming the build that served the text. Theirs is React with
+  react-markdown; this is server-rendered, so search is a GET and the index is
+  a form -- no JS at all.
+#}
 {% block admin %}
-<div class="card">
-  <h1>Documentation</h1>
-  <p class="muted">Build {{ build.short or '—' }} on {{ build.branch or '—' }}{% if build.built_at %} ·
-    built {{ build.built_at[:16]|replace('T',' ') }} UTC{% endif %}</p>
-  {% if not build.available %}
-  <div class="banner warn">{{ build.error or 'No git history in this image — the change log below is empty because it could not be read, not because nothing changed.' }}</div>
-  {% endif %}
+
+<div class="dochead">
+  <div>
+    <h1>Documentation</h1>
+    <p class="muted">What Argent Ridge does and the rules it upholds. Lives in the repo beside
+      the code, ships in the same image, and is read off disk at request time &mdash; so it
+      cannot drift from what is running.</p>
+  </div>
+  <div class="buildbadge">
+    {% if build_footer.version %}<b>{{ build_footer.version }}</b>{% else %}<b>dev build</b>{% endif %}
+    {% if build.short %}<span class="fig">{{ build.short }}</span>{% endif %}
+    {% if build.branch %}<span>{{ build.branch }}</span>{% endif %}
+  </div>
 </div>
 
-<div class="card">
-<div class="split-page">
-  <div class="rail">
-    <h3>Documents</h3>
-    <div class="lists">
-      <a class="li {{ 'on' if not doc }}" href="/admin/docs">Change log <span>{{ build.commits|length }}</span></a>
-      {% for d in docs %}
-      <a class="li {{ 'on' if doc and doc.slug == d.slug }}" href="/admin/docs?doc={{ d.slug }}"
-         title="{{ d.where }}">{{ d.title[:26] }}</a>
+{% if not build.available %}
+<div class="banner warn">{{ build.error or 'No git history in this image — the change log is empty because it could not be read, not because nothing changed.' }}</div>
+{% endif %}
+
+<div class="docwrap">
+  <aside class="docindex">
+    <form method="get" action="/admin/docs" class="docsearch">
+      {% if doc %}<input type="hidden" name="doc" value="{{ doc.slug }}">{% endif %}
+      <input name="q" value="{{ q or '' }}" placeholder="Search the docs…" autocomplete="off">
+      {% if q %}<a href="/admin/docs{{ '?doc=' ~ doc.slug if doc }}" class="clearq"
+                   title="Clear search">&times;</a>{% endif %}
+    </form>
+
+    <a class="li {{ 'on' if not doc }}" href="/admin/docs{{ '?q=' ~ q if q }}">
+      Change log <span>{{ build.commits|length }}</span></a>
+
+    {% if q and not groups %}
+      <p class="faint" style="padding:10px 11px">No document mentions &ldquo;{{ q }}&rdquo;.</p>
+    {% endif %}
+
+    {% for group, rows in groups %}
+    <div class="docgroup">
+      <div class="raillabel">{{ group }}</div>
+      {% for d in rows %}
+      <a class="li {{ 'on' if doc and doc.slug == d.slug }}"
+         href="/admin/docs?doc={{ d.slug }}{{ '&q=' ~ q if q }}" title="{{ d.where }}">
+        <span class="t">{{ d.title }}</span>
+        {% if d.hits %}<span class="hits">{{ d.hits }}</span>{% endif %}
+      </a>
       {% endfor %}
     </div>
-  </div>
-  <div class="railmain">
+    {% endfor %}
+
+    <p class="faint indexfoot">{{ total_docs }} documents · served from disk at request time</p>
+  </aside>
+
+  <article class="doccard">
     {% if doc %}
-      <h2>{{ doc.title }} <span class="faint">{{ doc.where }}</span></h2>
       <div class="md">{{ rendered|safe }}</div>
+      <p class="faint docsrc">{{ doc.where }}{% if doc.words %} · {{ doc.words }} words{% endif %}</p>
     {% else %}
       <h2>Change log <span class="faint">every commit, generated from git at build time</span></h2>
+      <p class="muted">Written by the build, not by hand &mdash; so &ldquo;every commit is
+        logged&rdquo; is structural rather than a discipline anyone has to remember.</p>
       <div class="tscroll"><table>
         <thead><tr><th>When</th><th>Change</th><th>Commit</th><th class="r">Files</th></tr></thead>
         <tbody>
@@ -41,9 +80,8 @@
         {% endfor %}
         </tbody>
       </table></div>
-      {% if not build.commits %}<p class="muted">No commits recorded in this build.</p>{% endif %}
+      {% if not build.commits %}<p class="faint">No commits in this build's log.</p>{% endif %}
     {% endif %}
-  </div>
-</div>
+  </article>
 </div>
 {% endblock %}

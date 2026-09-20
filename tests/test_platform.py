@@ -221,6 +221,10 @@ def main() -> int:
     test_settings_moved_not_deleted()
     test_no_anthropic_anywhere()
     test_caches_are_invalidated_by_writers()
+    test_system_docs_are_complete_and_linked()
+    test_docs_renderer()
+    test_search_ranks_by_hits()
+    test_every_page_carries_the_build_stamp()
     print()
     if FAILS:
         print(f"FAILED ({len(FAILS)}): " + ", ".join(FAILS))
@@ -228,6 +232,92 @@ def main() -> int:
     print("All checks passed.")
     return 0
 
+
+
+
+# --- 9. system documentation ------------------------------------------------
+
+def test_system_docs_are_complete_and_linked() -> None:
+    print("\n9. system documentation")
+    from core import docs_store as D
+
+    docs = D.list_docs()
+    system = [d for d in docs if d["group"] == "System documentation"]
+    check("the numbered spec exists", len(system) >= 13, f"{len(system)} documents")
+
+    # every one carries the build it was reviewed against
+    missing = [d["name"] for d in system if not d.get("applies_to")]
+    check("every system doc stamps its build", not missing, ", ".join(missing) or "all stamped")
+
+    # ⛔ A cross-reference that 404s is worse than no link. Every in-repo .md
+    # link must resolve to a document this page can actually open.
+    slugs = {d["slug"] for d in docs}
+    dead = []
+    for d in docs:
+        for s in re.findall(r"/admin/docs\?doc=([\w-]+)", D.render_markdown(d.get("text", ""))):
+            if s not in slugs:
+                dead.append(f"{d['slug']} -> {s}")
+    check("no dead cross-links", not dead, "; ".join(dead) or "all resolve")
+
+    # the index groups in a deliberate order, spec first
+    groups = [g for g, _ in D.grouped_docs(docs)]
+    check("System documentation is the first group",
+          groups and groups[0] == "System documentation", str(groups))
+
+
+def test_docs_renderer() -> None:
+    print("\n10. the renderer escapes first, then formats")
+    from core import docs_store as D
+
+    evil = D.render_markdown('<script>alert(1)</script>\n\n[x](javascript:alert(1))')
+    check("script tags cannot survive", "<script" not in evil)
+
+    md = "> **Invariant:** a rule.\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nSee [x](./01-overview.md)."
+    h = D.render_markdown(md)
+    check("blockquotes render as blockquotes", "<blockquote>" in h)
+    check("the first table row is a header", "<thead>" in h and "<th>A</th>" in h)
+    check("in-repo links become in-app links", '/admin/docs?doc=01-overview' in h)
+
+    # ⛔ MUTATION PROOF. The bug is `tag = "td"` unconditionally, which makes
+    # every row a body row. The property that separates correct from broken is
+    # that EXACTLY ONE row is a header — not that any <th> exists at all, which
+    # was this check's first, useless form: it asserted a single-row table has
+    # no header, and a single row IS the header, so it failed against correct
+    # code. A proof that fails on working code proves nothing about the bug.
+    three = D.render_markdown("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |")
+    check("(proof) exactly one header row, two body rows",
+          three.count("<th>") == 2 and three.count("<td>") == 4,
+          f"{three.count('<th>')} th, {three.count('<td>')} td")
+    check("(proof) the header is the FIRST row",
+          three.index("<th>A</th>") < three.index("<td>1</td>"))
+
+
+def test_search_ranks_by_hits() -> None:
+    print("\n11. doc search ranks, it does not merely filter")
+    from core import docs_store as D
+    docs = D.list_docs()
+    res = D.search(docs, "invariant")
+    check("finds documents", len(res) > 1, f"{len(res)} match")
+    check("results carry a hit count", all(r.get("hits") for r in res))
+    check("ranked descending",
+          all(res[i]["hits"] >= res[i + 1]["hits"] for i in range(len(res) - 1)),
+          " > ".join(str(r["hits"]) for r in res[:4]))
+    check("a term nobody uses returns nothing",
+          D.search(docs, "zzzznotaword") == [])
+    check("empty search returns everything", len(D.search(docs, "")) == len(docs))
+
+
+def test_every_page_carries_the_build_stamp() -> None:
+    print("\n12. the build stamp reaches signed-out pages too")
+    main = open(os.path.join(ROOT, "app/main.py")).read()
+    # ⛔ A route that skips _ctx has no build_footer and renders "dev build" on
+    # a real deploy -- a wrong version, which is what the stamp exists to stop.
+    bare = re.findall(r'TemplateResponse\(\s*request,\s*"[a-z_]+\.html",\s*\{', main, re.S)
+    check("no route builds its context by hand", not bare, f"{len(bare)} found")
+    shell = open(os.path.join(ROOT, "app/templates/shell.html")).read()
+    check("the signed-out shell has a footer", "shellfoot" in shell)
+    base = open(os.path.join(ROOT, "app/templates/base.html")).read()
+    check("the signed-in shell has a footer", "sitefoot" in base)
 
 if __name__ == "__main__":
     sys.exit(main())

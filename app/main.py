@@ -517,7 +517,7 @@ def do_login(request: Request, email: str = Form(...), password: str = Form(...)
     except ValueError as e:
         return templates.TemplateResponse(
             request, "login.html",
-            {"error": str(e), "email": email}, status_code=401)
+            _ctx(request, error=str(e), email=email), status_code=401)
     # Only ever redirect somewhere on this site.
     dest = next if next.startswith("/") and not next.startswith("//") else "/"
     resp = RedirectResponse(dest, status_code=303)
@@ -536,7 +536,7 @@ def do_logout(request: Request):
 
 @app.get("/forgot", response_class=HTMLResponse)
 def forgot_form(request: Request):
-    return templates.TemplateResponse(request, "forgot.html", {"sent": False, "error": None})
+    return templates.TemplateResponse(request, "forgot.html", _ctx(request, sent=False, error=None))
 
 
 @app.post("/forgot", response_class=HTMLResponse)
@@ -547,14 +547,13 @@ def do_forgot(request: Request, email: str = Form(...)):
         auth.request_reset(email)
     except Exception:  # noqa: BLE001
         pass
-    return templates.TemplateResponse(request, "forgot.html", {"sent": True, "error": None})
+    return templates.TemplateResponse(request, "forgot.html", _ctx(request, sent=True, error=None))
 
 
 @app.get("/setup/{token}", response_class=HTMLResponse)
 def setup_form(request: Request, token: str):
     u = auth.find_setup(token)
-    return templates.TemplateResponse(request, "setup.html",
-                                      {"user": u, "token": token, "error": None})
+    return templates.TemplateResponse(request, "setup.html", _ctx(request, **{"user": u, "token": token, "error": None}))
 
 
 @app.post("/setup/{token}", response_class=HTMLResponse)
@@ -564,14 +563,14 @@ def do_setup(request: Request, token: str,
     if password != confirm:
         return templates.TemplateResponse(
             request, "setup.html",
-            {"user": u, "token": token, "error": "The two passwords do not match."},
+            _ctx(request, user=u, token=token, error="The two passwords do not match."),
             status_code=400)
     try:
         auth.complete_setup(token, password)
     except ValueError as e:
         return templates.TemplateResponse(
             request, "setup.html",
-            {"user": u, "token": token, "error": str(e)}, status_code=400)
+            _ctx(request, user=u, token=token, error=str(e)), status_code=400)
     return RedirectResponse("/login", status_code=303)
 
 
@@ -604,14 +603,21 @@ def admin_health(request: Request, force: int = 0):
 
 
 @app.get("/admin/docs", response_class=HTMLResponse)
-def admin_docs(request: Request, doc: str = ""):
+def admin_docs(request: Request, doc: str = "", q: str = ""):
     require_owner(request)
     from core import docs_store
+    all_docs = docs_store.list_docs()
+    # ⚠ Search filters the INDEX, never the document on screen. Narrowing the
+    # index while still showing the open document is what lets you search for a
+    # term, see which pages carry it, and keep reading the one you were on.
+    shown = docs_store.search(all_docs, q) if q else all_docs
     d = docs_store.get_doc(doc) if doc else None
     return templates.TemplateResponse(request, "docs.html", _ctx(request, **{
-        "docs": docs_store.list_docs(), "doc": d,
+        "groups": docs_store.grouped_docs(shown), "doc": d, "q": q,
+        "total_docs": len(all_docs),
         "rendered": docs_store.render_markdown(d["markdown"]) if d else "",
         "build": docs_store.build_info(), "page": "admin", "tape": _tape(),
+        "admin_page": "/admin/docs",
     }))
 
 

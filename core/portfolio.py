@@ -232,7 +232,7 @@ def period_range(key: str, today=None) -> tuple[str, str, str]:
 
 # --- P&L --------------------------------------------------------------------
 
-def performance(period: str = "month", page: int = 1, per_page: int = 50) -> dict:
+def performance(period: str = "month", page: int = 1, per_page: int = 25) -> dict:
     """Realized P&L for a period, plus open P&L.
 
     ⛔ Deposits and withdrawals are NEVER counted as profit. A $25k transfer
