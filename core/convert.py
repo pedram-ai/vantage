@@ -112,10 +112,18 @@ def ratio_on(day: str | date | None) -> dict:
            "es": None, "spy": None, "spx": None, "measured": False,
            "at": None, "asof": None, "requested": key}
     try:
-        from .bars import fetch_bars
-        # 2y covers every article the feeds can return (20 posts each).
-        spy_bars, _ = fetch_bars("SPY", interval="1d", range_="2y")
-        es_bars, _ = fetch_bars("ES=F", interval="1d", range_="2y")
+        # ⭐ READ THE ARCHIVE FIRST. This used to fetch two years of daily bars
+        # from Yahoo on every cold call and cost 3.0 s on an article page.
+        # Historical closes never change, so they belong in the store.
+        from . import barstore
+        spy_bars = barstore.read_store("SPY", "1d")
+        es_bars = barstore.read_store("ES=F", "1d")
+        if not spy_bars or not es_bars:
+            from .bars import fetch_bars
+            if not spy_bars:
+                spy_bars, _ = fetch_bars("SPY", interval="1d", range_="10y")
+            if not es_bars:
+                es_bars, _ = fetch_bars("ES=F", interval="1d", range_="10y")
         spy = {b.ts.date().isoformat(): b.close for b in spy_bars}
         es = {b.ts.date().isoformat(): b.close for b in es_bars}
         both = sorted(set(spy) & set(es))

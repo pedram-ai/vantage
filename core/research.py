@@ -78,7 +78,15 @@ def add_source(kind: str, handle: str, label: str = "") -> str:
     m = re.search(r"https?://([\w-]+)\.substack\.com", handle)
     if m:
         handle = m.group(1)
-    sid = re.sub(r"[^a-z0-9-]", "", handle) or "source"
+    # ⚠ For a full URL the handle is useless as an id — it produced
+    # `httpsaswathdamodaranblogspotcomfeedspostsdefaultaltrss`, which then
+    # appears in every filter link. Slug the LABEL when there is one.
+    base = label.strip() or handle
+    if base.startswith("http"):
+        base = re.sub(r"^https?://(www\.)?", "", base).split("/")[0]
+    sid = re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-",
+                                    base.lower().split("·")[0].strip())).strip("-")
+    sid = sid[:40] or "source"
     db().collection(SOURCES).document(sid).set({
         "kind": kind or "substack", "handle": handle,
         "label": label.strip() or handle, "enabled": True,
@@ -331,7 +339,10 @@ def add_manual(title: str, body: str, url: str = "", source_label: str = "") -> 
 
 # --- reading ----------------------------------------------------------------
 
-PREVIEW_CHARS = 1400
+# ⚠ The list is a SCAN surface, not a reading surface. 1,400 characters made
+# each card taller than the screen and buried the assessment beside it; the
+# full text is one click away on the article page.
+PREVIEW_CHARS = 260
 
 
 def _within(rows: list[dict], days: int) -> list[dict]:
@@ -461,8 +472,12 @@ Hard rules:
 target, a date or a view it does not contain.
 - `basis` must quote the sentence you relied on. No sentence ⇒ "not stated".
 - Most daily plans are CONDITIONAL — "above X target Y, below X target Z". \
-That is shape "range" with the pivot as `activation`, not a direction. Only \
-call it directional when the article actually commits to one side.
+That is shape "conditional" with the pivot as `activation`, not a direction. \
+Only call it directional when the article commits to one side.
+- Emit a call ONLY for a horizon the article genuinely addresses. A daily plan \
+has one 24h call and nothing else. A valuation essay may have a 12-month or \
+longer view and nothing shorter. An article with no market view at all returns \
+an EMPTY list, and that is a correct answer.
 - `reference_level` is the price the article treats as "here" — the last \
 close, the spot, or the pivot it builds everything around.
 - No advice, no recommendation, no target of your own."""
@@ -513,10 +528,51 @@ def _leg(desc: str) -> dict:
     }
 
 
+# ⭐ THE HORIZON LADDER. An article addresses the horizons it addresses and no
+# others — a daily plan says nothing about six months, and a Damodaran
+# valuation piece says nothing about tomorrow. Asking for a fixed set forces
+# the model to fill blanks; asking for a LIST lets absence be the answer.
+HORIZONS = [
+    ("24h",  "Next 24 hours"),
+    ("1w",   "1 week"),
+    ("1m",   "1 month"),
+    ("3m",   "3 months"),
+    ("6m",   "6 months"),
+    ("12m",  "12 months"),
+    ("long", "Longer than a year"),
+]
+HORIZON_KEYS = [k for k, _ in HORIZONS]
+HORIZON_LABEL = dict(HORIZONS)
+
+_CALL = {
+    "type": "object",
+    "properties": {
+        "horizon": {"type": "string", "enum": HORIZON_KEYS,
+                    "description": "Which horizon this call is about."},
+        "bias": {"type": "string", "enum": ["bullish", "bearish", "neutral"]},
+        "shape": {"type": "string", "enum": ["directional", "range", "conditional"]},
+        "target": {"type": "number", "description": "In the article's own units. Omit if none."},
+        "range_low": {"type": "number"},
+        "range_high": {"type": "number"},
+        "activation_level": {"type": "number",
+                             "description": "Trigger PRICE in the article's units, if any."},
+        "activation": {"type": "string", "description": "The trigger, in words."},
+        "note": {"type": "string", "description": "One sentence."},
+        "basis": {"type": "string", "description": "The sentence this rests on."},
+    },
+    "required": ["horizon", "bias", "shape", "note", "basis"],
+}
+
 SCHEMA = {
     "type": "object",
     "properties": {
         "gist": {"type": "string", "description": "One or two sentences."},
+        "calls": {
+            "type": "array", "items": _CALL,
+            "description": "ONE entry per horizon the article actually addresses. "
+                           "Omit any horizon it does not discuss — an empty list is "
+                           "a valid answer for a piece with no market view.",
+        },
         "quoted_in": {"type": "string", "enum": ["ES", "SPX", "SPY", "unclear"],
                       "description": "Which instrument the article's prices are in."},
         "reference_level": {"type": "number",
@@ -524,11 +580,9 @@ SCHEMA = {
                                            "in its own units."},
         "bias": {"type": "string", "enum": ["bullish", "bearish", "neutral"]},
         "conviction": {"type": "string", "enum": ["high", "medium", "low"]},
-        "h24": _leg("over the next 24 hours"),
-        "week": _leg("through the end of this week"),
         "levels": _LEVELS,
     },
-    "required": ["gist", "quoted_in", "bias", "conviction", "h24", "week", "levels"],
+    "required": ["gist", "quoted_in", "bias", "conviction", "calls", "levels"],
 }
 
 
@@ -552,8 +606,9 @@ def _convert_read(raw: dict, published_at: str | None) -> dict:
     ref = conv(raw.get("reference_level"))
     out["spy_ref"] = ref
 
-    for key in ("h24", "week"):
-        leg = dict(raw.get(key) or {})
+    calls = []
+    for leg in (raw.get("calls") or []):
+        leg = dict(leg)
         leg["spy_target"] = conv(leg.get("target"))
         leg["spy_low"] = conv(leg.get("range_low"))
         leg["spy_high"] = conv(leg.get("range_high"))
@@ -567,7 +622,10 @@ def _convert_read(raw: dict, published_at: str | None) -> dict:
         leg["move_pct"] = (round((t - ref) / ref * 100, 2)
                            if (t is not None and ref) else None)
         leg["move_pts"] = round(t - ref, 2) if (t is not None and ref) else None
-        out[key] = leg
+        if leg.get("horizon") in HORIZON_KEYS:
+            calls.append(leg)
+    out["calls"] = calls
+    out["horizons"] = {c["horizon"]: c for c in calls}
 
     lv = []
     for l in (raw.get("levels") or []):
@@ -789,4 +847,21 @@ def outlook(days: int = 10, now_spy: float | None = None) -> dict:
         "levels_all": sorted(levels, key=lambda r: -r["spy"]),
         "newest": rows[0].get("published_at"),
         "oldest": rows[-1].get("published_at"),
+    }
+
+
+def neighbours(aid: str) -> dict:
+    """The articles either side of this one, for prev/next.
+
+    ⚠ Newest-first order, so "previous" means the NEWER article — matching the
+    direction the list reads in, not the direction time runs.
+    """
+    rows = _list_all()
+    ids = [r["id"] for r in rows]
+    if aid not in ids:
+        return {"newer": None, "older": None}
+    i = ids.index(aid)
+    return {
+        "newer": rows[i - 1] if i > 0 else None,
+        "older": rows[i + 1] if i + 1 < len(rows) else None,
     }

@@ -276,6 +276,10 @@ def main() -> int:
     test_research_reads_are_off_the_request_path()
     test_research_paywall_threshold_is_measured()
     test_paste_upgrades_a_teaser_in_place()
+    test_interval_guard_catches_range_max()
+    test_partition_grain_is_not_monthly_for_daily()
+    test_sync_does_not_refetch_what_cannot_have_changed()
+    test_resample_groups_by_index_not_clock()
     print()
     if FAILS:
         print(f"FAILED ({len(FAILS)}): " + ", ".join(FAILS))
@@ -392,23 +396,26 @@ def test_research_never_summarises_a_teaser() -> None:
 
 
 def test_research_schema_demands_a_basis() -> None:
-    print("\n14. every horizon must cite the sentence it rests on")
+    print("\n14. the horizon ladder")
     from core import research as R
-    for key in ("h24", "week"):
-        h = R.SCHEMA["properties"][key]
-        check(f"{key} requires basis", "basis" in h["required"])
-        check(f"{key} can say 'not stated'",
-              "not stated" in h["properties"]["shape"]["enum"])
-        check(f"{key} carries a trigger PRICE, not just words",
-              "activation_level" in h["properties"])
-    # ⚠ Case-insensitive on purpose: the prompt's emphasis moves between
-    # revisions, and a guard that breaks on capitalisation trains people to
-    # ignore it.
+
+    call = R.SCHEMA["properties"]["calls"]["items"]
+    check("a call must carry its basis", "basis" in call["required"])
+    check("a call must name its horizon", "horizon" in call["required"])
+    check("a call carries a trigger PRICE, not just words",
+          "activation_level" in call["properties"])
+    # ⛔ The ladder must be a LIST, so absence is expressible. A fixed set of
+    # keys forces the model to fill blanks for horizons the article never
+    # discusses — a daily plan has no six-month view and should say nothing.
+    check("calls is a list, not fixed keys",
+          R.SCHEMA["properties"]["calls"]["type"] == "array")
+    check("the prompt says an empty list is valid",
+          "EMPTY list" in R.SYSTEM or "empty list" in R.SYSTEM.lower())
+    for h in ("24h", "1w", "1m", "3m", "6m", "12m", "long"):
+        check(f"horizon {h} is offered", h in call["properties"]["horizon"]["enum"])
     low = R.SYSTEM.lower()
     check("the prompt forbids inventing",
-          "never invent" in low and "no advice" in low,
-          "invent+advice clauses present")
-    # ⛔ The model must NOT be asked to convert. That is the whole design.
+          "never invent" in low and "no advice" in low)
     check("the prompt forbids the model converting",
           "NEVER convert a price yourself" in R.SYSTEM
           and "Never divide ES by 10" in R.SYSTEM)
@@ -582,6 +589,76 @@ def test_paste_upgrades_a_teaser_in_place() -> None:
 def hashlib_sha(u: str) -> str:
     import hashlib
     return hashlib.sha256(u.encode()).hexdigest()[:24]
+
+
+
+# --- 19. the bar archive ----------------------------------------------------
+
+def test_interval_guard_catches_range_max() -> None:
+    print("\n19. the archive refuses data that is not the interval it claims")
+    from core import barstore as B
+    from core.profile import Bar
+    from datetime import datetime, timedelta, timezone
+
+    def series(step_secs, n=40):
+        t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        return [Bar(ts=t0 + timedelta(seconds=step_secs * i), open=1, high=2,
+                    low=0.5, close=1.5, volume=10) for i in range(n)]
+
+    ok, why = B.interval_ok(series(86400), "1d")
+    check("real daily bars are accepted", ok, why)
+    # ⛔ THE ACTUAL BUG: range=max returns MONTHLY bars for interval=1d.
+    bad_ok, bad_why = B.interval_ok(series(86400 * 31), "1d")
+    check("monthly bars labelled daily are REFUSED", not bad_ok, bad_why)
+    check("minute bars labelled hourly are refused",
+          not B.interval_ok(series(60), "1h")[0])
+    # weekends must not trip it — the median is what makes that true
+    mixed = series(86400, 30)
+    for i in range(5, 30, 5):
+        mixed[i] = Bar(ts=mixed[i].ts + timedelta(days=2), open=1, high=2,
+                       low=0.5, close=1.5, volume=10)
+    check("(proof) weekend gaps do NOT trip the guard",
+          B.interval_ok(sorted(mixed, key=lambda b: b.ts), "1d")[0],
+          "median ignores the holes a mean would be dragged by")
+
+
+def test_partition_grain_is_not_monthly_for_daily() -> None:
+    print("\n20. partition grain matches the interval")
+    from core import barstore as B
+    check("daily is a single object", B.INTERVALS["1d"]["part"] == "all",
+          "121 monthly files for 2,514 daily bars cost 16 s per read")
+    check("minute data is monthly", B.INTERVALS["1m"]["part"] == "%Y-%m")
+    check("hourly is yearly", B.INTERVALS["1h"]["part"] == "%Y")
+    # ⛔ No interval may use range=max — that is the silent-monthly trap.
+    bad = [k for k, v in B.INTERVALS.items() if v["range"] == "max"]
+    check("no interval uses range=max", not bad, ", ".join(bad) or "none")
+
+
+def test_sync_does_not_refetch_what_cannot_have_changed() -> None:
+    print("\n21. a sync that cannot learn anything makes no request")
+    src = open(os.path.join(ROOT, "core/barstore.py")).read()
+    check("sync remembers ATTEMPTS, not just successes", "_TRIED" in src,
+          "over a weekend the last daily bar is ~52 h stale forever")
+    check("the cooldown is bounded", "_cooldown" in src and "3600.0" in src)
+    check("a failed write fails the sync",
+          'return {"ok": False, "reason": f"{len(failed)} month(s) failed to write"' in src,
+          "a store that silently stores nothing must not report success")
+
+
+def test_resample_groups_by_index_not_clock() -> None:
+    print("\n22. 4h is resampled by index, never by wall clock")
+    from core import barstore as B
+    from core.profile import Bar
+    from datetime import datetime, timedelta, timezone
+    t0 = datetime(2026, 1, 1, 14, tzinfo=timezone.utc)
+    bars = [Bar(ts=t0 + timedelta(hours=i), open=i, high=i + 2, low=i - 1,
+                close=i + 1, volume=5) for i in range(8)]
+    out = B.resample(bars, 4)
+    check("8 hourly bars make 2 four-hour bars", len(out) == 2, str(len(out)))
+    check("high is the max of the group", out[0].high == max(b.high for b in bars[:4]))
+    check("low is the min of the group", out[0].low == min(b.low for b in bars[:4]))
+    check("close is the LAST close", out[0].close == bars[3].close)
+    check("volume sums", out[0].volume == 20)
 
 if __name__ == "__main__":
     sys.exit(main())

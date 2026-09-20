@@ -215,6 +215,67 @@ main{max-width:1120px;margin:20px auto;padding:0 20px 24px;}
 .lvl b{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums;}
 .prov{font-size:10.5px;color:var(--faint);margin-top:11px;padding-top:9px;
   border-top:1px solid var(--line);}
+/* compact, clickable list cards */
+a.card-link{display:block;text-decoration:none;color:inherit;position:relative;
+  transition:border-color .12s,box-shadow .12s;}
+a.card-link:hover{border-color:var(--accent);box-shadow:0 3px 14px rgba(12,22,34,.07);}
+a.card-link .arthead{padding:14px 18px 10px;}
+a.card-link .artleft{padding:12px 18px 14px;}
+a.card-link .artright{padding:12px 18px 14px;}
+a.card-link .gist{font-size:12.5px;margin:0;line-height:1.5;}
+a.card-link .excerpt{font-size:12px;color:var(--muted);margin:0;line-height:1.5;}
+a.card-link .striphead{margin-bottom:1px;}
+a.card-link .trigger{margin:1px 0 0;font-size:11px;}
+a.card-link .nostate{padding:4px 0 0;}
+.cardgo{display:block;padding:9px 18px 12px;font-size:11.5px;color:var(--accent);
+  border-top:1px solid var(--line-soft);}
+a.card-link:hover .cardgo{font-weight:600;}
+.amain{min-width:0;}
+.pubpick input{font-size:12px;padding:4px 24px 4px 11px;border-radius:99px;
+  border:1px solid var(--line);background:var(--card);color:var(--ink);width:170px;}
+.pubpick{position:relative;display:inline-flex;align-items:center;}
+.clearpub{position:absolute;right:9px;color:var(--faint);text-decoration:none;font-size:14px;}
+.clearpub:hover{color:var(--ink);}
+/* article page */
+.artnav{display:flex;align-items:center;gap:7px;margin-bottom:14px;flex-wrap:wrap;}
+.artnav .gap{width:10px;}
+.artnav button.pill{font-family:inherit;cursor:pointer;}
+.artpage{padding:0;overflow:hidden;}
+.artpage .arthead{padding:20px 22px 14px;}
+.artpage h1{font-size:19px;margin:0 0 4px;}
+.artgrid.apg{grid-template-columns:minmax(0,1.15fr) minmax(330px,.85fr);}
+.prose.full{max-height:none;font-size:13.5px;line-height:1.68;}
+.conv{opacity:.7;font-weight:500;text-transform:none;}
+.refrow{display:flex;justify-content:space-between;align-items:baseline;
+  padding-bottom:11px;margin-bottom:13px;border-bottom:1px solid var(--line);}
+.refv{font-size:19px;font-weight:700;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;}
+.lvltbl{width:100%;font-size:11.5px;margin-bottom:4px;}
+.lvltbl td{padding:3px 0;border:0;vertical-align:baseline;}
+.lvltbl .lk{width:64px;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--faint);}
+.lvltbl .lk.support{color:var(--up);} .lvltbl .lk.resistance{color:var(--down);}
+.lvltbl .lk.pivot{color:var(--accent);}
+.lvltbl .ll{color:var(--muted);}
+.lvltbl .lp{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+/* ---- Charts ---- */
+.chead{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+.cpick{display:flex;gap:5px;flex-wrap:wrap;}
+.cwrap{padding:16px 18px 12px;}
+.ctop{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+  margin-bottom:10px;flex-wrap:wrap;}
+.ctop h1{font-size:18px;margin:0 0 2px;}
+#readout{font-variant-numeric:tabular-nums;min-height:15px;margin:0;font-size:11.5px;}
+.cmas{display:flex;gap:13px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);}
+.cmas label{display:flex;align-items:center;gap:4px;cursor:pointer;}
+#cv{width:100%;display:block;cursor:crosshair;touch-action:none;}
+.chint{display:flex;align-items:center;font-size:10.5px;color:var(--faint);
+  padding-top:8px;margin-top:6px;border-top:1px solid var(--line-soft);}
+.chint .gap{flex:1;}
+.cov{width:100%;font-size:12.5px;}
+.cov td{padding:4px 0;border:0;}
+.cov td:first-child{color:var(--muted);}
+.cov .r{text-align:right;}
 .px{font-variant-numeric:tabular-nums;}
 @media(max-width:1020px){
   .synth{grid-template-columns:1fr;} .rbody{grid-template-columns:1fr;}
@@ -412,6 +473,7 @@ abbr{text-decoration:underline dotted rgba(140,155,170,.7);cursor:help;text-unde
     <a href="/positions" class="{{ 'on' if page=='positions' }}">Positions</a>
     <a href="/performance" class="{{ 'on' if page=='performance' }}">Performance</a>
     <a href="/research" class="{{ 'on' if page=='research' }}">Research</a>
+    <a href="/charts" class="{{ 'on' if page=='charts' }}">Charts</a>
   </nav>
 </header>
 <main>

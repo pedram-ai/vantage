@@ -55,6 +55,11 @@ def _warm_cache() -> None:
             # cold read. Priming it here means the first admin page load is
             # warm rather than the one that pays for it.
             lambda: __import__("core.sysheath", fromlist=["x"]).snapshot(),
+            # ⚠ The daily archive backs the ES→SPY ratio on every article
+            # card. Reading it here moves a ~6 s cold read off the first
+            # request that happens to need it.
+            lambda: __import__("core.barstore", fromlist=["x"]).read_store("SPY", "1d"),
+            lambda: __import__("core.barstore", fromlist=["x"]).read_store("ES=F", "1d"),
         ):
             try:
                 warm()
@@ -89,6 +94,16 @@ def _money(value, dp: int = 0, signed: bool = False, symbol: str = "$") -> str:
     if v < 0:
         return f"-{body}"
     return f"+{body}" if signed else body
+
+
+# ES resolves to the front contract; SPY is itself. Both are Yahoo symbols.
+def _chart_symbols() -> dict:
+    from datetime import date
+    from core.instruments import resolve
+    return {"SPY": "SPY", "ES": resolve("ES").yahoo_symbol(date.today())}
+
+
+CHART_SYMBOLS = _chart_symbols()
 
 
 def _pt_date(iso):
@@ -266,6 +281,43 @@ def api_symbols(request: Request, q: str = ""):
     return {"q": q, "results": symbol_search.search(q)}
 
 
+@app.get("/charts", response_class=HTMLResponse)
+def charts_page(request: Request, symbol: str = "SPY", interval: str = "1d",
+                bars: int = 300):
+    """Candles for SPY and ES across every timeframe, from the local archive."""
+    check_user(request)
+    from core import barstore
+    symbol = (symbol or "SPY").upper()
+    if symbol not in CHART_SYMBOLS:
+        symbol = "SPY"
+    if interval not in barstore.INTERVALS and interval not in barstore.DERIVED:
+        interval = "1d"
+    bars = max(60, min(int(bars or 300), 1500))
+    yah = CHART_SYMBOLS[symbol]
+    rows, info = barstore.bars_for(yah, interval, bars)
+    return templates.TemplateResponse(request, "charts.html", _ctx(request, **{
+        "page": "charts", "tape": _tape(), "symbol": symbol, "interval": interval,
+        "nbars": bars, "info": info,
+        "series": [{"t": int(b.ts.timestamp()), "o": round(b.open, 4),
+                    "h": round(b.high, 4), "l": round(b.low, 4),
+                    "c": round(b.close, 4), "v": int(b.volume or 0)} for b in rows],
+        "coverage": barstore.coverage(yah, interval if interval in barstore.INTERVALS
+                                      else barstore.DERIVED[interval][0]),
+        "intervals": barstore.INTERVALS, "derived": barstore.DERIVED,
+        "symbols": CHART_SYMBOLS,
+    }))
+
+
+@app.post("/charts/sync")
+def charts_sync(request: Request, symbol: str = Form("SPY")):
+    """Pull anything the archive is missing for this symbol."""
+    check_user(request)
+    from core import barstore
+    yah = CHART_SYMBOLS.get((symbol or "SPY").upper(), "SPY")
+    barstore.sync_all([yah])
+    return RedirectResponse(f"/charts?symbol={symbol}", status_code=303)
+
+
 # --- Research ---------------------------------------------------------------
 
 @app.get("/research", response_class=HTMLResponse)
@@ -330,11 +382,36 @@ def research_article(request: Request, aid: str):
     """One article in full, with its read. The list carries a preview only."""
     check_user(request)
     from core import research
+    from core import convert, read_viz
     a = research.get_article(aid)
     if not a:
         raise HTTPException(status_code=404, detail="No such article")
+    spy_now = convert.ratios().get("spy")
+    r = a.get("read") or {}
+    viz = None
+    if r.get("spy_ref") is not None:
+        unit = r.get("quoted_in") or "SPY"
+        ar = convert.ratio_on((a.get("published_at") or "")[:10])
+        viz = {
+            "h24": read_viz.strip(r.get("h24"), r["spy_ref"], spy_now,
+                                  "next 24 hours", unit, ar),
+            "week": read_viz.strip(r.get("week"), r["spy_ref"], spy_now,
+                                   "this week", unit, ar),
+            "bias": read_viz.bias_bar(r.get("bias"), r.get("conviction")),
+            "unit": unit, "ratio": round(ar.get("es_spy", 0), 4),
+            "asof": ar.get("asof"),
+            "ref": read_viz._px(r["spy_ref"], unit, ar),
+            "levels": [{"label": l.get("label", ""), "kind": l.get("kind", "other"),
+                        "px": read_viz._px(l["spy"], unit, ar)}
+                       for l in (r.get("levels") or [])],
+            "trig": {k: (read_viz._px(leg["spy_activation"], unit, ar)
+                         if leg.get("spy_activation") is not None else None)
+                     for k, leg in (("h24", r.get("h24") or {}),
+                                    ("week", r.get("week") or {}))},
+        }
     return templates.TemplateResponse(request, "article.html", _ctx(request, **{
-        "a": a, "page": "research", "tape": _tape(),
+        "a": a, "viz": viz, "spy_now": spy_now, "page": "research", "tape": _tape(),
+        "prev_next": research.neighbours(aid),
     }))
 
 

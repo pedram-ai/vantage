@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block title %}Charts · {{ symbol }} {{ interval }} · Argent Ridge{% endblock %}
+{% block content %}
+
+<div class="chead">
+  <div class="cpick">
+    {% for s in symbols %}
+    <a class="pill {{ 'on' if symbol == s }}"
+       href="/charts?symbol={{ s }}&interval={{ interval }}&bars={{ nbars }}">{{ s }}</a>
+    {% endfor %}
+  </div>
+  <div class="cpick">
+    {% for iv, spec in intervals.items() %}
+    <a class="pill {{ 'on' if interval == iv }}"
+       href="/charts?symbol={{ symbol }}&interval={{ iv }}&bars={{ nbars }}">{{ spec.label }}</a>
+    {% endfor %}
+    {% for iv, src in derived.items() %}
+    <a class="pill {{ 'on' if interval == iv }}"
+       href="/charts?symbol={{ symbol }}&interval={{ iv }}&bars={{ nbars }}"
+       title="Resampled from {{ src[0] }} — Yahoo has no {{ iv }} interval">4 hour</a>
+    {% endfor %}
+  </div>
+  <form method="post" action="/charts/sync" class="inline" style="margin-left:auto">
+    <input type="hidden" name="symbol" value="{{ symbol }}">
+    <button class="btn ghost" type="submit">&#8635; Sync archive</button>
+  </form>
+</div>
+
+<div class="card cwrap">
+  <div class="ctop">
+    <div>
+      <h1>{{ symbol }} <span class="faint">{{ intervals[interval].label
+        if interval in intervals else '4 hour' }}</span></h1>
+      <p class="faint" id="readout">&nbsp;</p>
+    </div>
+    <div class="cmas">
+      <label><input type="checkbox" class="ma" data-n="20" checked> MA20</label>
+      <label><input type="checkbox" class="ma" data-n="50" checked> MA50</label>
+      <label><input type="checkbox" class="ma" data-n="200"> MA200</label>
+      <label><input type="checkbox" id="showvol" checked> Volume</label>
+    </div>
+  </div>
+
+  {% if not series %}
+  <div class="empty" style="padding:40px 0">
+    <p><b>Nothing in the archive for this timeframe yet.</b></p>
+    <p class="faint">Use <b>Sync archive</b> above. The first pull for a symbol fetches
+      every interval and takes a minute.</p>
+  </div>
+  {% else %}
+  <canvas id="cv" height="440"></canvas>
+  <div class="chint">
+    <span>Scroll to zoom · drag to pan · double-click to reset</span>
+    <span class="gap"></span>
+    <span>{{ series|length }} bars held
+      {%- if info.derived_from %} · resampled from {{ info.derived_from }}{% endif %}</span>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Archive <span class="faint">what is stored locally</span></h2>
+  <table class="cov"><tbody>
+    <tr><td>Bars held</td><td class="r fig">{{ '{:,}'.format(coverage.bars) }}</td></tr>
+    <tr><td>Oldest</td><td class="r">{{ coverage.first[:16].replace('T',' ') if coverage.first else '—' }}</td></tr>
+    <tr><td>Newest</td><td class="r">{{ coverage.last[:16].replace('T',' ') if coverage.last else '—' }}</td></tr>
+    <tr><td>Behind by</td><td class="r fig">{{ coverage.stale_hours }} h</td></tr>
+    {% if info.synced %}
+    <tr><td>Last sync</td><td class="r faint">
+      {%- if info.synced.skipped %}no fetch needed — {{ info.synced.skipped }}
+      {%- elif info.synced.ok %}added {{ info.synced.added }}
+      {%- else %}{{ info.synced.reason }}{% endif %}</td></tr>
+    {% endif %}
+  </tbody></table>
+  <p class="faint" style="margin-top:10px">
+    Bars are stored in Cloud Storage, not re-fetched. Yahoo keeps only <b>7 days</b> of
+    1-minute data, so every minute not archived is gone for good — this is the only copy
+    of most of it.</p>
+</div>
+
+<script id="bars" type="application/json">{{ series|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+{% if series %}
+<script>
+/* Candles + moving averages on a canvas.
+   ⚠ Canvas rather than SVG: 1,500 candles is 1,500 DOM nodes in SVG and pans
+   like treacle. Here the whole redraw is one pass and zoom stays at 60fps.
+   ⛔ No chart library — the CSP forbids external scripts, and this is ~150
+   lines against a 300KB dependency. */
+(function () {
+  var cv = document.getElementById('cv');
+  var bars = JSON.parse(document.getElementById('bars').textContent);
+  if (!cv || !bars.length) return;
+  var css = getComputedStyle(document.documentElement);
+  function tok(n, f) { return (css.getPropertyValue(n) || f).trim(); }
+  var UP = tok('--up', '#2f9e8f'), DOWN = tok('--down', '#c0563f'),
+      LINE = tok('--line', '#e6eaef'), INK = tok('--ink', '#26313d'),
+      FAINT = tok('--faint', '#93a1b0'), ACC = tok('--accent', '#3e7c8f');
+  var MA_COLORS = { 20: ACC, 50: '#b58a4a', 200: '#8a6fb0' };
+
+  var view = { i0: Math.max(0, bars.length - 160), i1: bars.length };
+  var drag = null, hover = null, dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  function sma(n) {
+    var out = [], run = 0;
+    for (var i = 0; i < bars.length; i++) {
+      run += bars[i].c;
+      if (i >= n) run -= bars[i - n].c;
+      out.push(i >= n - 1 ? run / n : null);
+    }
+    return out;
+  }
+  var MAS = { 20: sma(20), 50: sma(50), 200: sma(200) };
+
+  function activeMAs() {
+    var on = [];
+    document.querySelectorAll('.ma').forEach(function (c) {
+      if (c.checked) on.push(+c.dataset.n);
+    });
+    return on;
+  }
+  function showVol() { return document.getElementById('showvol').checked; }
+
+  function fmt(v) { return v.toFixed(2); }
+  function fmtTime(t) {
+    var d = new Date(t * 1000);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' });
+  }
+
+  function draw() {
+    var W = cv.clientWidth, H = cv.clientHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    var x = cv.getContext('2d');
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    x.clearRect(0, 0, W, H);
+
+    var i0 = Math.max(0, Math.floor(view.i0)), i1 = Math.min(bars.length, Math.ceil(view.i1));
+    var slice = bars.slice(i0, i1);
+    if (!slice.length) return;
+
+    var padL = 8, padR = 58, padT = 10;
+    var volH = showVol() ? 56 : 0;
+    var plotH = H - padT - 26 - volH;
+    var plotW = W - padL - padR;
+
+    var mas = activeMAs();
+    var lo = Infinity, hi = -Infinity;
+    slice.forEach(function (b) { if (b.l < lo) lo = b.l; if (b.h > hi) hi = b.h; });
+    mas.forEach(function (n) {
+      for (var i = i0; i < i1; i++) {
+        var v = MAS[n][i];
+        if (v !== null) { if (v < lo) lo = v; if (v > hi) hi = v; }
+      }
+    });
+    var pad = (hi - lo) * 0.06 || 1;
+    lo -= pad; hi += pad;
+
+    var bw = plotW / slice.length;
+    function px(i) { return padL + (i + 0.5) * bw; }
+    function py(v) { return padT + (hi - v) / (hi - lo) * plotH; }
+
+    /* grid + price axis */
+    x.strokeStyle = LINE; x.fillStyle = FAINT;
+    x.font = '10px ui-rounded, system-ui, sans-serif'; x.lineWidth = 1;
+    var steps = 5;
+    for (var g = 0; g <= steps; g++) {
+      var v = lo + (hi - lo) * g / steps, yy = Math.round(py(v)) + 0.5;
+      x.globalAlpha = 0.55; x.beginPath();
+      x.moveTo(padL, yy); x.lineTo(padL + plotW, yy); x.stroke();
+      x.globalAlpha = 1;
+      x.fillText(fmt(v), padL + plotW + 6, yy + 3);
+    }
+
+    /* volume */
+    if (volH) {
+      var vmax = 0;
+      slice.forEach(function (b) { if (b.v > vmax) vmax = b.v; });
+      var vTop = padT + plotH + 18;
+      slice.forEach(function (b, k) {
+        if (!vmax) return;
+        var h = (b.v / vmax) * (volH - 6);
+        x.fillStyle = b.c >= b.o ? UP : DOWN; x.globalAlpha = 0.22;
+        x.fillRect(px(k) - Math.max(bw * 0.3, 0.6), vTop + (volH - 6 - h),
+                   Math.max(bw * 0.6, 1.2), h);
+      });
+      x.globalAlpha = 1;
+    }
+
+    /* candles */
+    var body = Math.max(bw * 0.62, 1);
+    slice.forEach(function (b, k) {
+      var up = b.c >= b.o, c = up ? UP : DOWN;
+      var cx = px(k);
+      x.strokeStyle = c; x.fillStyle = c; x.lineWidth = Math.min(1.2, Math.max(bw * 0.1, 0.7));
+      x.beginPath(); x.moveTo(cx, py(b.h)); x.lineTo(cx, py(b.l)); x.stroke();
+      var yo = py(b.o), yc = py(b.c);
+      var top = Math.min(yo, yc), hgt = Math.max(Math.abs(yc - yo), 1);
+      if (bw > 2.2) x.fillRect(cx - body / 2, top, body, hgt);
+      else { x.beginPath(); x.moveTo(cx, top); x.lineTo(cx, top + hgt); x.stroke(); }
+    });
+
+    /* moving averages */
+    mas.forEach(function (n) {
+      x.strokeStyle = MA_COLORS[n] || ACC; x.lineWidth = 1.5;
+      x.beginPath(); var started = false;
+      for (var i = i0; i < i1; i++) {
+        var v = MAS[n][i];
+        if (v === null) { started = false; continue; }
+        var X = px(i - i0), Y = py(v);
+        if (!started) { x.moveTo(X, Y); started = true; } else x.lineTo(X, Y);
+      }
+      x.stroke();
+    });
+
+    /* time axis */
+    x.fillStyle = FAINT;
+    var ticks = Math.min(6, slice.length);
+    for (var t = 0; t < ticks; t++) {
+      var idx = Math.floor(t * (slice.length - 1) / Math.max(ticks - 1, 1));
+      var lbl = fmtTime(slice[idx].t).split(',')[0];
+      x.fillText(lbl, Math.min(px(idx) - 18, W - padR - 40), H - 8);
+    }
+
+    /* crosshair */
+    if (hover !== null) {
+      var hi2 = Math.max(0, Math.min(slice.length - 1, Math.round((hover - padL) / bw - 0.5)));
+      var b = slice[hi2];
+      x.strokeStyle = FAINT; x.globalAlpha = 0.55; x.setLineDash([3, 3]);
+      x.beginPath(); x.moveTo(px(hi2), padT); x.lineTo(px(hi2), padT + plotH); x.stroke();
+      x.setLineDash([]); x.globalAlpha = 1;
+      document.getElementById('readout').textContent =
+        fmtTime(b.t) + '   O ' + fmt(b.o) + '  H ' + fmt(b.h) +
+        '  L ' + fmt(b.l) + '  C ' + fmt(b.c) +
+        (b.v ? '   vol ' + b.v.toLocaleString() : '');
+    }
+  }
+
+  cv.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var span = view.i1 - view.i0;
+    var f = e.deltaY > 0 ? 1.15 : 0.87;
+    var next = Math.max(20, Math.min(bars.length, span * f));
+    var mid = view.i0 + span * (e.offsetX / cv.clientWidth);
+    view.i0 = Math.max(0, mid - next * (e.offsetX / cv.clientWidth));
+    view.i1 = Math.min(bars.length, view.i0 + next);
+    if (view.i1 - view.i0 < next) view.i0 = Math.max(0, view.i1 - next);
+    draw();
+  }, { passive: false });
+
+  cv.addEventListener('mousedown', function (e) { drag = { x: e.clientX, i0: view.i0, i1: view.i1 }; });
+  window.addEventListener('mouseup', function () { drag = null; });
+  cv.addEventListener('mousemove', function (e) {
+    hover = e.offsetX;
+    if (drag) {
+      var span = drag.i1 - drag.i0;
+      var d = (e.clientX - drag.x) / cv.clientWidth * span;
+      view.i0 = Math.max(0, Math.min(bars.length - span, drag.i0 - d));
+      view.i1 = view.i0 + span;
+    }
+    draw();
+  });
+  cv.addEventListener('mouseleave', function () {
+    hover = null; document.getElementById('readout').innerHTML = '&nbsp;'; draw();
+  });
+  cv.addEventListener('dblclick', function () {
+    view.i0 = Math.max(0, bars.length - 160); view.i1 = bars.length; draw();
+  });
+  document.querySelectorAll('.ma, #showvol').forEach(function (c) {
+    c.addEventListener('change', draw);
+  });
+  window.addEventListener('resize', draw);
+  draw();
+})();
+</script>
+{% endif %}
+{% endblock %}

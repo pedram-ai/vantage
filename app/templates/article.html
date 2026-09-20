@@ -1,54 +1,139 @@
 {% extends "base.html" %}
 {% block title %}{{ a.title }} · Argent Ridge{% endblock %}
 {% block content %}
-<p class="faint"><a href="/research">&larr; Research</a></p>
-<div class="card art">
+
+<div class="artnav">
+  <a href="/research">&larr; Research</a>
+  <span class="gap"></span>
+  {% if viz %}
+  <span class="lab">Show</span>
+  <button type="button" class="pill on" data-unit="spy">SPY</button>
+  <button type="button" class="pill" data-unit="orig">{{ viz.unit }} as written</button>
+  {% endif %}
+  <span style="margin-left:auto"></span>
+  {% if prev_next.newer %}<a class="pill" href="/research/{{ prev_next.newer.id }}">&larr; Newer</a>{% endif %}
+  {% if prev_next.older %}<a class="pill" href="/research/{{ prev_next.older.id }}">Older &rarr;</a>{% endif %}
+</div>
+
+<div class="card artpage">
   <div class="arthead">
-    <div>
-      <h1 style="font-size:19px;margin:0 0 4px">{{ a.title }}</h1>
-      <p class="faint">{{ a.source_label }} · {{ a.published_at|pt_date }} ·
-        {{ a.chars }} chars ·
-        <a href="{{ a.url }}" target="_blank" rel="noopener">open on Substack &#8599;</a></p>
+    <div class="amain">
+      <h1>{{ a.title }}</h1>
+      <p class="faint">{{ a.source_label }} · {{ a.published_at|pt_date }}
+        {%- if viz %} · quoted in {{ viz.unit }}{% endif %} · {{ a.chars }} chars
+        {%- if a.pasted %} · <span class="tagp">pasted in</span>{% endif %}
+        {%- if a.unlocked_at %} · <span class="tagp">unlocked</span>{% endif %}
+        · <a href="{{ a.url }}" target="_blank" rel="noopener">open on Substack &#8599;</a></p>
     </div>
-    {% if a.read %}<span class="chip conf-{{ a.read.confidence }}">{{ a.read.confidence }} confidence</span>
-    {% elif a.paywalled %}<span class="chip off">teaser only</span>
-    {% else %}<span class="chip wait">not read yet</span>{% endif %}
+    {% if a.read %}
+    <span class="biaschip {{ a.read.bias }}">{{ viz.bias|safe if viz }}{{ a.read.bias }}
+      <span class="conv">· {{ a.read.conviction }}</span></span>
+    {% elif a.paywalled %}<span class="chip off">teaser only</span>{% endif %}
   </div>
-  <div class="artbody">
-    <div class="artext">
-      <div class="prose" style="max-height:none">{{ a.body }}</div>
+
+  <div class="artgrid apg">
+    <div class="artleft">
+      {% if a.read %}<p class="gist">{{ a.read.gist }}</p>{% endif %}
+      {% if a.paywalled %}
+      <div class="banner warn" style="margin:0 0 12px">Substack published only a teaser.
+        Paste the full text below and it replaces this in place.</div>
+      {% endif %}
+      <div class="prose full">{{ a.body }}</div>
+
+      {% if a.paywalled %}
+      <details class="pastebox" open>
+        <summary>Paste the full text</summary>
+        <form method="post" action="/research/paste">
+          <input type="hidden" name="url" value="{{ a.url }}">
+          <input type="hidden" name="title" value="{{ a.title }}">
+          <input type="hidden" name="source_label" value="{{ a.source_label }}">
+          <p class="faint" style="margin:7px 0">
+            <a href="{{ a.url }}" target="_blank" rel="noopener">Open it &#8599;</a>,
+            select all, copy, paste below. Header lines are trimmed automatically.</p>
+          <textarea name="body" rows="8" required placeholder="Paste the whole post here…"></textarea>
+          <button class="btn" type="submit">Save &amp; read</button>
+        </form>
+      </details>
+      {% endif %}
     </div>
-    <aside class="artread">
-      {% if a.read %}
-        <p class="gist">{{ a.read.gist }}</p>
-        {% for label, key in [('Next 24 hours','24h'), ('Through Friday','7d')] %}
-        <div class="horizon">
-          <div class="hlab">{{ label }}</div>
-          {% for sym in ['spy','qqq'] %}
-          {% set h = a.read[sym ~ '_' ~ key] %}
-          <div class="hrow">
-            <span class="hsym">{{ sym|upper }}</span>
-            <span class="dir d-{{ h.direction|replace(' ','-') }}">{{ h.direction }}</span>
-            <span class="hnote">{{ h.note }}</span>
-          </div>
-          {% if h.basis %}<div class="hbasis">&ldquo;{{ h.basis }}&rdquo;</div>{% endif %}
-          {% endfor %}
+
+    <aside class="artright">
+      {% if viz %}
+        <div class="refrow">
+          <span class="lab">Level at writing</span>
+          <span class="refv">{{ viz.ref|safe }}</span>
+        </div>
+
+        {% for key, title in [('h24','Next 24 hours'), ('week','Through Friday')] %}
+        {% set L = a.read[key] %}
+        <div class="strip">
+          <div class="striphead"><span class="lab">{{ title }}</span>
+            <span class="shape {{ 'none' if L.shape == 'not stated' }}">{{ L.shape }}</span></div>
+          {% if L.shape == 'not stated' %}
+            <p class="nostate">{{ L.note or 'Not addressed in this article.' }}</p>
+          {% else %}
+            {{ viz[key]|safe }}
+            {% if L.activation %}
+            <p class="trigger">Activates on
+              {% if viz.trig[key] %}<b>{{ viz.trig[key]|safe }}</b> —{% endif %}
+              <span class="muted">{{ L.activation }}</span></p>
+            {% endif %}
+            {% if L.note %}<p class="note">{{ L.note }}</p>{% endif %}
+            {% if L.basis %}<p class="basis">&ldquo;{{ L.basis }}&rdquo;</p>{% endif %}
+          {% endif %}
         </div>
         {% endfor %}
-        {% if a.read.levels %}
-        <div class="horizon">
-          <div class="hlab">Levels named</div>
-          <div class="lvls">{% for l in a.read.levels %}<span class="lvl">{{ l }}</span>{% endfor %}</div>
-        </div>
+
+        {% if viz.levels %}
+        <div class="lab" style="margin-bottom:5px">Every level named</div>
+        <table class="lvltbl"><tbody>
+          {% for l in viz.levels %}
+          <tr><td class="lk {{ l.kind }}">{{ l.kind }}</td>
+              <td class="ll">{{ l.label }}</td>
+              <td class="lp"><b>{{ l.px|safe }}</b></td></tr>
+          {% endfor %}
+        </tbody></table>
         {% endif %}
-        <p class="faint">Read by {{ a.read_model or 'Gemini' }} from this text only.
-          Each call quotes the sentence it rests on.</p>
+
+        <p class="prov">Prices convert at <b class="fig">{{ viz.ratio }}</b>
+          {{ viz.unit }}/SPY — the closing ratio on <b>{{ viz.asof }}</b>, the last
+          session before this was written, not today's.
+          {% if spy_now %}SPY is <b class="fig">{{ '%.2f'|format(spy_now) }}</b> now.{% endif %}</p>
+        <p class="faint">Read by Gemini from this article's text alone. Each call quotes
+          the sentence it rests on; a horizon with no sentence reads
+          &ldquo;not stated&rdquo;.</p>
       {% elif a.paywalled %}
-        <p class="muted">Not read — only a teaser was published.</p>
+        <p class="muted">Nothing to assess — only a teaser was published.</p>
       {% else %}
         <p class="muted">Not read yet.</p>
       {% endif %}
     </aside>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if viz %}
+<script>
+(function () {
+  var KEY = 'ar_unit';
+  function apply(u) {
+    document.querySelectorAll('.px').forEach(function (el) {
+      var v = el.getAttribute(u === 'orig' ? 'data-orig' : 'data-spy');
+      if (v) el.textContent = v;
+    });
+    document.querySelectorAll('[data-unit]').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-unit') === u);
+    });
+    try { localStorage.setItem(KEY, u); } catch (e) {}
+  }
+  document.querySelectorAll('[data-unit]').forEach(function (b) {
+    b.addEventListener('click', function () { apply(b.getAttribute('data-unit')); });
+  });
+  var saved = null;
+  try { saved = localStorage.getItem(KEY); } catch (e) {}
+  if (saved === 'orig') apply('orig');
+})();
+</script>
+{% endif %}
 {% endblock %}

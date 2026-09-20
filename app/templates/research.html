@@ -131,13 +131,18 @@
          href="/research?days={{ d }}{{ '&source=' ~ source if source }}">{{ l }}</a>
       {% endfor %}
       <span class="gap"></span>
+      {# ⭐ An autocomplete, not a pill per publication — the list grows and a
+         row of pills stops being scannable somewhere around six. #}
       <span class="lab">Publication</span>
-      <a class="pill {{ 'on' if not source }}"
-         href="/research?days={{ days }}">Both</a>
-      {% for s in sources %}
-      <a class="pill {{ 'on' if source == s.id }}"
-         href="/research?source={{ s.id }}&days={{ days }}">{{ s.label.split(' · ')[0] }}</a>
-      {% endfor %}
+      <span class="ac-wrap pubpick">
+        <input id="pubq" placeholder="All publications" autocomplete="off"
+               value="{{ (sources | selectattr('id','equalto',source) | map(attribute='label')
+                          | first) if source else '' }}"
+               data-days="{{ days }}">
+        <div class="ac-menu" id="pubac" role="listbox" hidden></div>
+        {% if source %}<a class="clearpub" href="/research?days={{ days }}"
+                          title="Show all">&times;</a>{% endif %}
+      </span>
       <span class="gap"></span>
       {# ⭐ The unit toggle. Both values are already in the markup; this only
          changes which is shown, so it cannot disagree with the other. #}
@@ -176,89 +181,52 @@
       {% endif %}
 
       {% for a in articles %}
-      <article class="art" id="a{{ a.id }}">
+      <a class="art card-link" id="a{{ a.id }}" href="/research/{{ a.id }}">
         <div class="arthead">
-          <div>
+          <div class="amain">
             <h3>{{ a.title }}</h3>
             <p class="faint">{{ a.source_label }} · {{ a.published_at|pt_date }}
-              {%- if a.viz %} · quoted in {{ a.viz.unit }}{% endif %} · {{ a.chars }} chars
-              {%- if a.pasted %} · <span class="tagp">pasted in</span>{% endif %}
-              · <a href="{{ a.url }}" target="_blank" rel="noopener">open &#8599;</a></p>
+              {%- if a.viz %} · in {{ a.viz.unit }}{% endif %}
+              {%- if a.pasted %} · <span class="tagp">pasted</span>{% endif %}</p>
           </div>
           {% if a.read %}
-          <span class="biaschip {{ a.read.bias }}">{{ a.viz.bias|safe if a.viz }}
-            {{ a.read.bias }}</span>
+          <span class="biaschip {{ a.read.bias }}">{{ a.viz.bias|safe if a.viz }}{{ a.read.bias }}</span>
           {% elif a.paywalled %}<span class="chip off">teaser only</span>
           {% else %}<span class="chip wait">not read</span>{% endif %}
         </div>
 
         <div class="artgrid">
           <div class="artleft">
-            {% if a.read %}<p class="gist">{{ a.read.gist }}</p>{% endif %}
-            {% if a.paywalled %}
-            <p class="muted" style="font-size:12.5px">Substack published only a teaser.</p>
-            {% endif %}
-            <div class="excerpt">{{ a.body }}</div>
-            {% if a.truncated %}<a class="more" href="/research/{{ a.id }}">Full text &rarr;</a>{% endif %}
+            {% if a.read %}<p class="gist">{{ a.read.gist }}</p>
+            {% else %}<p class="excerpt">{{ a.body }}…</p>{% endif %}
           </div>
 
           <aside class="artright">
             {% if a.viz %}
-              {% for key, title in [('h24','Next 24 hours'), ('week','Through Friday')] %}
-              {% set L = a.read[key] %}
-              <div class="strip">
-                <div class="striphead"><span class="lab">{{ title }}</span>
-                  <span class="shape {{ 'none' if L.shape == 'not stated' }}">{{ L.shape }}</span></div>
-                {% if L.shape == 'not stated' %}
-                <p class="nostate">{{ L.note or 'Not addressed.' }}</p>
-                {% else %}
-                {{ a.viz[key]|safe }}
+              {% set L = a.read.h24 if a.read.h24.shape != 'not stated' else a.read.week %}
+              {% set which = 'Next 24 hours' if a.read.h24.shape != 'not stated' else 'Through Friday' %}
+              {% if L.shape == 'not stated' %}
+                <p class="nostate">No level call in this one.</p>
+              {% else %}
+                <div class="striphead"><span class="lab">{{ which }}</span>
+                  <span class="shape">{{ L.shape }}</span></div>
+                {{ (a.viz.h24 if a.read.h24.shape != 'not stated' else a.viz.week)|safe }}
                 {% if L.activation %}
-                <p class="trigger">Activates on
-                  {% if a.viz.trig[key].px %}<b>{{ a.viz.trig[key].px|safe }}</b>{% endif %}
-                  <span class="faint">{{ L.activation }}</span></p>
+                <p class="trigger">on
+                  {% if a.viz.trig[('h24' if a.read.h24.shape != 'not stated' else 'week')].px %}
+                  <b>{{ a.viz.trig[('h24' if a.read.h24.shape != 'not stated' else 'week')].px|safe }}</b>
+                  {% endif %}</p>
                 {% endif %}
-                {% if L.note %}<p class="note">{{ L.note }}</p>{% endif %}
-                {% if L.basis %}<p class="basis">&ldquo;{{ L.basis }}&rdquo;</p>{% endif %}
-                {% endif %}
-              </div>
-              {% endfor %}
-
-              {% if a.viz.levels %}
-              <div class="lab" style="margin-bottom:4px">Levels</div>
-              <div class="lvls">
-                {% for l in a.viz.levels %}
-                <span class="lvl">{{ l.label }} <b>{{ l.px|safe }}</b></span>
-                {% endfor %}
-              </div>
               {% endif %}
-
-              <p class="prov">Converted at <b class="fig">{{ a.viz.ratio }}</b>
-                {{ a.viz.unit }}/SPY — the closing ratio on <b>{{ a.viz.asof }}</b>,
-                not today's.</p>
-
             {% elif a.paywalled %}
-              <p class="muted">Behind the paywall.</p>
-              <details class="pastebox">
-                <summary>Paste the full text</summary>
-                <form method="post" action="/research/paste">
-                  <input type="hidden" name="url" value="{{ a.url }}">
-                  <input type="hidden" name="title" value="{{ a.title }}">
-                  <input type="hidden" name="source_label" value="{{ a.source_label }}">
-                  <p class="faint" style="margin:7px 0">
-                    <a href="{{ a.url }}" target="_blank" rel="noopener">Open it &#8599;</a>,
-                    select all, copy, paste below. Header lines are trimmed automatically.</p>
-                  <textarea name="body" rows="6" required
-                            placeholder="Paste the whole post here…"></textarea>
-                  <button class="btn" type="submit">Save &amp; read</button>
-                </form>
-              </details>
+              <p class="nostate">Behind the paywall — open to paste it in.</p>
             {% else %}
-              <p class="muted">Not read yet.</p>
+              <p class="nostate">Not read yet.</p>
             {% endif %}
           </aside>
         </div>
-      </article>
+        <span class="cardgo">Read the full assessment &rarr;</span>
+      </a>
       {% endfor %}
 
       {% if feed.pages > 1 %}
@@ -371,6 +339,36 @@
    arithmetic, and the two units cannot drift apart on the same card.
    ⚠ The choice is remembered, because switching back on every navigation is
    the kind of small friction that makes a control go unused. */
+/* Publication picker. Filters the list we already have — no request per
+   keystroke, because the set is small and local. */
+(function () {
+  var box = document.getElementById('pubq'), menu = document.getElementById('pubac');
+  if (!box || !menu) return;
+  var all = {{ sources | map(attribute='label') | list | tojson }};
+  var ids = {{ sources | map(attribute='id') | list | tojson }};
+  var days = box.getAttribute('data-days') || '0';
+  function draw(q) {
+    var ql = (q || '').toLowerCase();
+    var rows = all.map(function (l, i) { return {l: l, id: ids[i]}; })
+                  .filter(function (r) { return !ql || r.l.toLowerCase().indexOf(ql) >= 0; });
+    menu.innerHTML =
+      '<button type="button" class="ac-row" data-id=""><b>All publications</b></button>' +
+      rows.map(function (r) {
+        return '<button type="button" class="ac-row" data-id="' + r.id + '"><b>' +
+               r.l + '</b></button>'; }).join('');
+    menu.hidden = false;
+  }
+  box.addEventListener('focus', function () { draw(box.value); });
+  box.addEventListener('input', function () { draw(box.value); });
+  box.addEventListener('blur', function () { setTimeout(function () { menu.hidden = true; }, 140); });
+  menu.addEventListener('mousedown', function (e) {
+    var b = e.target.closest('.ac-row'); if (!b) return;
+    e.preventDefault();
+    var id = b.getAttribute('data-id');
+    location.href = '/research?days=' + days + (id ? '&source=' + encodeURIComponent(id) : '');
+  });
+})();
+
 (function () {
   var KEY = 'ar_unit';
   function apply(u) {
@@ -384,7 +382,11 @@
     try { localStorage.setItem(KEY, u); } catch (e) {}
   }
   document.querySelectorAll('[data-unit]').forEach(function (b) {
-    b.addEventListener('click', function () { apply(b.getAttribute('data-unit')); });
+    b.addEventListener('click', function (e) {
+      // ⚠ The cards are links now. Without this the toggle navigates.
+      e.preventDefault(); e.stopPropagation();
+      apply(b.getAttribute('data-unit'));
+    });
   });
   var saved = null;
   try { saved = localStorage.getItem(KEY); } catch (e) {}
