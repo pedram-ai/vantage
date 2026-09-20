@@ -1,4 +1,27 @@
+# --- Argent Ridge ---
 .venv/
 __pycache__/
 *.pyc
 nohup.out
+
+# --- Bitbucket defaults ---
+node_modules/
+dist/
+*.class
+*.py[cod]
+*.log
+*.jar
+target/
+.idea/
+TEST*.xml
+.DS_Store
+Thumbs.db
+*.app
+*.exe
+*.war
+*.mp4
+*.tiff
+*.avi
+*.flv
+*.mov
+*.wmv
