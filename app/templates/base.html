@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Argent Ridge{% endblock %}</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="alternate icon" href="/favicon.ico" sizes="32x32">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+{# Inlined data URIs: IAP gates every path, so a fetched icon 302s to a Google
+   sign-in page and the tab shows no icon at all. #}
+<link rel="icon" href="{{ icons.svg }}" type="image/svg+xml">
+<link rel="alternate icon" href="{{ icons.ico }}" sizes="32x32">
+<link rel="apple-touch-icon" href="{{ icons.png180 }}">
 <meta name="theme-color" content="#0f1a20">
 <style>
 :root{
@@ -125,6 +127,99 @@ main{max-width:1120px;margin:20px auto;padding:0 20px 24px;}
 .chip.conf-high{background:var(--up-soft);color:var(--up);}
 .chip.conf-medium{background:var(--accent-soft);color:var(--accent);}
 .chip.conf-low{background:var(--line-soft);color:var(--faint);}
+.pastebox{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;}
+.pastebox>summary{cursor:pointer;font-family:var(--soft);font-size:12.5px;
+  font-weight:620;color:var(--accent);list-style:none;}
+.pastebox>summary::-webkit-details-marker{display:none;}
+.pastebox>summary:before{content:"＋ ";}
+.pastebox[open]>summary:before{content:"− ";}
+.pastebox textarea{width:100%;font-size:12px;line-height:1.5;font-family:inherit;
+  border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--card);
+  color:var(--ink);resize:vertical;}
+.pastebox .btn{margin-top:7px;}
+/* ---- Research: synthesis, ladder, timeline, strips ---- */
+.synth{display:grid;grid-template-columns:minmax(0,1fr) 236px;gap:16px;margin-bottom:18px;}
+.synthtop{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;}
+.bignum{font-size:25px;font-weight:750;letter-spacing:-.02em;}
+.leanrow{display:flex;align-items:center;gap:10px;margin-top:4px;}
+.lean{font-size:13px;font-weight:650;padding:2px 11px;border-radius:999px;}
+.lean.neutral{background:var(--line-soft);color:var(--muted);}
+.lean.bullish{background:var(--up-soft);color:var(--up);}
+.lean.bearish{background:var(--down-soft);color:var(--down);}
+.split{display:flex;gap:2px;align-items:center;}
+.split i{display:block;height:9px;border-radius:2px;}
+.horizons{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:14px;}
+.hz{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--paper);}
+.hzband{display:flex;align-items:baseline;gap:6px;margin:6px 0 3px;}
+.hzband .v{font-size:19px;font-weight:700;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;}
+.hzband .to{color:var(--faint);font-size:13px;}
+.hzmeta{font-size:11.5px;color:var(--muted);}
+.srcline{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:10.5px;color:var(--faint);}
+.srcbar{flex:1;height:4px;border-radius:99px;background:var(--line);overflow:hidden;display:flex;}
+.srcbar i{display:block;height:100%;}
+.ladcard{padding:15px 13px;}
+.ladderhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px;}
+.ladnote{margin:9px 0 0;line-height:1.4;}
+.ladder .rung{display:grid;grid-template-columns:56px 1fr;gap:8px;align-items:center;
+  height:21px;font-size:11.5px;}
+.ladder .px-cell{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;}
+.wtwrap{display:flex;align-items:center;}
+.ladder .wt{height:7px;border-radius:99px;background:var(--accent);opacity:.22;}
+.ladder .rung.support .wt{background:var(--up);opacity:.42;}
+.ladder .rung.resistance .wt{background:var(--down);opacity:.42;}
+.ladder .rung.pivot .wt{background:var(--accent);opacity:.6;}
+.ladder .n{font-size:9.5px;color:var(--faint);padding-left:5px;}
+.ladder .rung.now{background:var(--accent-soft);border-radius:7px;height:25px;margin:2px 0;}
+.ladder .rung.now .px-cell{color:var(--accent);font-weight:750;}
+.nowlab{font-size:10.5px;color:var(--accent);font-weight:650;}
+.filters{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:15px;}
+.filters .gap{width:10px;}
+.filters button.pill{font-family:inherit;cursor:pointer;}
+.rbody{display:grid;grid-template-columns:212px minmax(0,1fr);gap:18px;align-items:start;}
+.tl{position:sticky;top:14px;max-height:calc(100vh - 34px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--line);border-radius:14px;padding:9px;}
+.tlmonth{font-size:9.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);padding:10px 9px 5px;position:sticky;top:0;background:var(--card);}
+.tli{display:grid;grid-template-columns:19px 1fr;gap:8px;align-items:start;padding:6px 9px;
+  border-radius:9px;text-decoration:none;color:var(--ink);border-left:2px solid transparent;}
+.tli:hover{background:var(--paper);}
+.tli .d{font-size:11px;color:var(--faint);text-align:right;padding-top:1px;
+  font-variant-numeric:tabular-nums;}
+.tli .t{font-size:11.5px;line-height:1.35;}
+.tli .dot{display:inline-block;width:6px;height:6px;border-radius:99px;margin-right:5px;}
+.dot.bullish{background:var(--up);} .dot.bearish{background:var(--down);}
+.dot.neutral{background:var(--faint);}
+.dot.locked{background:none;border:1.5px solid var(--faint);}
+.tlfoot{padding:9px;margin:4px 0 0;border-top:1px solid var(--line);}
+.arthead h3{margin:0 0 3px;font-size:15.5px;}
+.biaschip{flex:none;display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:650;
+  padding:3px 10px;border-radius:99px;white-space:nowrap;text-transform:capitalize;}
+.biaschip.bullish{background:var(--up-soft);color:var(--up);}
+.biaschip.bearish{background:var(--down-soft);color:var(--down);}
+.biaschip.neutral{background:var(--line-soft);color:var(--muted);}
+.tagp{color:var(--accent);}
+.gist{font-size:13px;line-height:1.55;margin:0 0 11px;}
+.strip{margin-bottom:14px;}
+.striphead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;}
+.shape{font-size:10px;font-weight:650;padding:1px 7px;border-radius:99px;
+  background:var(--accent-soft);color:var(--accent);}
+.shape.none{background:var(--line-soft);color:var(--faint);}
+.nostate{font-size:11.5px;color:var(--faint);padding:8px 0 2px;margin:0;}
+.trigger{font-size:11.5px;color:var(--muted);margin:3px 0 0;}
+.trigger b{color:var(--accent);font-weight:650;}
+.note{font-size:11.5px;color:var(--muted);margin:4px 0 0;line-height:1.45;}
+.lvls{display:flex;flex-wrap:wrap;gap:4px;}
+.lvl{font-size:10.5px;padding:2px 7px;border-radius:6px;border:1px solid var(--line);
+  background:var(--card);color:var(--muted);}
+.lvl b{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums;}
+.prov{font-size:10.5px;color:var(--faint);margin-top:11px;padding-top:9px;
+  border-top:1px solid var(--line);}
+.px{font-variant-numeric:tabular-nums;}
+@media(max-width:1020px){
+  .synth{grid-template-columns:1fr;} .rbody{grid-template-columns:1fr;}
+  .tl{position:static;max-height:280px;}
+}
 @media(max-width:860px){
   .artbody{grid-template-columns:1fr;}
   .artext{border-right:0;border-bottom:1px solid var(--line-soft);}
@@ -290,7 +385,7 @@ abbr{text-decoration:underline dotted rgba(140,155,170,.7);cursor:help;text-unde
 <body>
 <header>
   <div class="htop">
-    <a href="/" class="brand"><img src="/favicon.svg" alt="" width="26" height="26"
+    <a href="/" class="brand"><img src="{{ icons.svg }}" alt="" width="26" height="26"
        style="vertical-align:-7px;margin-right:9px;border-radius:6px">ARGENT RIDGE</a>
     {% if tape %}<div class="tape" style="margin-left:auto">
       {% for t in tape %}<span>{{ t.symbol }} <b>{{ '%.2f'|format(t.price) if t.price else '—' }}</b></span>{% endfor %}

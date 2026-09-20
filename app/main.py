@@ -148,8 +148,10 @@ def require_owner(request: Request) -> dict:
 
 def _ctx(request: Request, **kw) -> dict:
     """Common template context — the viewer drives nav visibility."""
-    from core import version
+    from core import brand, version
     kw.setdefault("me", current_user(request))
+    # Inlined, because IAP 302s every asset path — see core/brand.py.
+    kw.setdefault("icons", brand.data_uris())
     # Read once at import inside core.version; this is a dict lookup, not I/O.
     kw.setdefault("build_footer", version.footer())
     return kw
@@ -269,12 +271,42 @@ def api_symbols(request: Request, q: str = ""):
 @app.get("/research", response_class=HTMLResponse)
 def research_page(request: Request, tab: str = "articles", source: str = "",
                   page: int = 1, err: str = "", pasted: str = "",
-                  was: int = 0, now: int = 0):
+                  was: int = 0, now: int = 0, days: int = 0):
     check_user(request)
-    from core import llm, research
+    from core import convert, llm, read_viz, research
     research.seed_sources()
-    feed = (research.list_articles(source=source, preview=True, page=page)
+    feed = (research.list_articles(source=source, preview=True, page=page, days=days)
             if tab == "articles" else {"rows": [], "pages": 1, "page": 1, "total": 0})
+    live = convert.ratios()
+    spy_now = live.get("spy")
+    # ⛔ All arithmetic happens here, never in the template. Each article is
+    # converted with ITS OWN publication-date ratio, so two cards on one page
+    # legitimately use different numbers.
+    for a in feed["rows"]:
+        r = a.get("read") or {}
+        if r.get("spy_ref") is None:
+            continue
+        unit = r.get("quoted_in") or "SPY"
+        ar = convert.ratio_on((a.get("published_at") or "")[:10])
+        a["viz"] = {
+            "h24": read_viz.strip(r.get("h24"), r["spy_ref"], spy_now,
+                                  "next 24 hours", unit, ar),
+            "week": read_viz.strip(r.get("week"), r["spy_ref"], spy_now,
+                                   "this week", unit, ar),
+            "bias": read_viz.bias_bar(r.get("bias"), r.get("conviction")),
+            "unit": unit,
+            "ratio": round(ar.get("es_spy", 0), 4),
+            "asof": ar.get("asof"),
+            "levels": [
+                {"label": l.get("label", ""),
+                 "px": read_viz._px(l["spy"], unit, ar)}
+                for l in (r.get("levels") or [])[:8]],
+            "trig": {
+                k: {"px": (read_viz._px(leg[f"spy_{k2}"], unit, ar)
+                           if leg.get(f"spy_{k2}") is not None else None)
+                    for k2 in ("activation",)}
+                for k, leg in (("h24", r.get("h24") or {}), ("week", r.get("week") or {}))},
+        }
     return templates.TemplateResponse(request, "research.html", _ctx(request, **{
         "page": "research", "tape": _tape(), "tab": tab,
         "articles": feed["rows"], "feed": feed, "sources": research.all_sources(),
@@ -282,7 +314,13 @@ def research_page(request: Request, tab: str = "articles", source: str = "",
         "paywalled": ([a for a in research._list_all() if a.get("paywalled")]
                       if tab == "paste" else []),
         "job": research.job_status(), "err": err, "pasted": pasted,
-        "was": was, "now": now,
+        "was": was, "now": now, "days": days, "spy_now": spy_now,
+        "timeline": research.timeline(source=source, days=days) if tab == "articles" else [],
+        "outlook": (research.outlook(14, spy_now) if tab == "articles" else None),
+        "ladder": (read_viz.ladder(research.outlook(14, spy_now).get("levels_all", []),
+                                   spy_now, "SPY", live)
+                   if tab == "articles" else ""),
+        "live_ratio": live,
         "llm": llm.status(),
     }))
 

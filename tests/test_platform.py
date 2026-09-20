@@ -269,6 +269,9 @@ def main() -> int:
     test_every_page_carries_the_build_stamp()
     test_research_never_summarises_a_teaser()
     test_research_schema_demands_a_basis()
+    test_conversion_is_dated_and_guarded()
+    test_read_carries_both_units()
+    test_ladder_straddles_the_price()
     test_research_refresh_never_destroys_a_read()
     test_research_reads_are_off_the_request_path()
     test_research_paywall_threshold_is_measured()
@@ -389,15 +392,108 @@ def test_research_never_summarises_a_teaser() -> None:
 
 
 def test_research_schema_demands_a_basis() -> None:
-    print("\n14. every direction must cite the sentence it rests on")
+    print("\n14. every horizon must cite the sentence it rests on")
     from core import research as R
-    for key in ("spy_24h", "qqq_24h", "spy_7d", "qqq_7d"):
+    for key in ("h24", "week"):
         h = R.SCHEMA["properties"][key]
         check(f"{key} requires basis", "basis" in h["required"])
         check(f"{key} can say 'not stated'",
-              "not stated" in h["properties"]["direction"]["enum"])
+              "not stated" in h["properties"]["shape"]["enum"])
+        check(f"{key} carries a trigger PRICE, not just words",
+              "activation_level" in h["properties"])
+    # ⚠ Case-insensitive on purpose: the prompt's emphasis moves between
+    # revisions, and a guard that breaks on capitalisation trains people to
+    # ignore it.
+    low = R.SYSTEM.lower()
     check("the prompt forbids inventing",
-          "NEVER invent" in R.SYSTEM and "no advice" in R.SYSTEM.lower())
+          "never invent" in low and "no advice" in low,
+          "invent+advice clauses present")
+    # ⛔ The model must NOT be asked to convert. That is the whole design.
+    check("the prompt forbids the model converting",
+          "NEVER convert a price yourself" in R.SYSTEM
+          and "Never divide ES by 10" in R.SYSTEM)
+
+
+def test_conversion_is_dated_and_guarded() -> None:
+    print("\n14b. ES→SPY conversion")
+    from core import convert as C
+
+    # ⛔ THE RATIO IS NOT 10, AND IT MOVES. Both measured, both load-bearing.
+    a = C.ratio_on("2026-03-20")
+    b = C.ratio_on("2026-09-18")
+    if a["measured"] and b["measured"]:
+        check("the ratio differs by date",
+              abs(a["es_spy"] - b["es_spy"]) > 0.02,
+              f"{a['es_spy']:.4f} on {a['asof']} vs {b['es_spy']:.4f} on {b['asof']}")
+        drift = abs(7697 / a["es_spy"] - 7697 / b["es_spy"])
+        check("using the wrong date misplaces a level", drift > 1.0,
+              f"{drift:.2f} SPY points apart on ES 7697")
+        check("neither is 10.0", abs(a["es_spy"] - 10) > 0.001)
+
+    # a weekend resolves to the prior session, not forward
+    sun = C.ratio_on("2026-09-20")
+    if sun["measured"]:
+        check("a weekend uses the PRIOR session", sun["asof"] <= "2026-09-20",
+              f"asof {sun['asof']}")
+
+    r = {"es_spy": 10.1255, "spx_spy": 10.1255}
+    check("ES converts", C.to_spy(7697, "ES", r) == 760.16, str(C.to_spy(7697, "ES", r)))
+    check("SPY passes through", C.to_spy(761.69, "SPY", r) == 761.69)
+    # ⛔ An unknown unit returns None rather than guessing a divisor.
+    check("an unknown unit is refused", C.to_spy(7697, "BANANA", r) is None)
+    check("round trip is exact",
+          C.spy_to(C.to_spy(7697, "ES", r), "ES", r) == 7697.0,
+          str(C.spy_to(C.to_spy(7697, "ES", r), "ES", r)))
+
+    # ⛔ THE BAND GUARD. An unconverted ES level renders as a SPY price
+    # perfectly happily — 7697 is absurd but not malformed.
+    check("an unconverted ES level fails the band", not C.plausible_spy(7697.0))
+    check("a real SPY level passes", C.plausible_spy(760.16))
+    check("None is not plausible", not C.plausible_spy(None))
+
+
+def test_read_carries_both_units() -> None:
+    print("\n14c. every price is rendered in both units")
+    from core import read_viz as V
+    r = {"es_spy": 10.0, "spx_spy": 10.0}
+    leg = {"shape": "directional", "direction": "up", "spy_target": 770.0,
+           "move_pts": 10.0, "move_pct": 1.32}
+    svg = V.strip(leg, 760.0, 761.0, "t", unit="ES", ratio=r)
+    pairs = re.findall(r'data-spy="([^"]+)" data-orig="([^"]+)"', svg)
+    check("prices carry both units", len(pairs) >= 3, f"{len(pairs)} spans")
+    spy_vals = [float(p[0].replace(",", "")) for p in pairs]
+    orig_vals = [float(p[1].replace(",", "")) for p in pairs]
+    # ⛔ MUTATION PROOF: if the toggle re-derived in the browser it would use
+    # today's ratio. Here the ORIGINAL must be exactly ratio x SPY.
+    ok = all(abs(o - s * 10.0) < 0.05 for s, o in zip(spy_vals, orig_vals))
+    check("(proof) original == SPY x the article's ratio", ok,
+          f"{list(zip(spy_vals, orig_vals))[:3]}")
+    # a SPY-quoted article shows the same number on both sides
+    svg2 = V.strip(leg, 760.0, 761.0, "t", unit="SPY", ratio=r)
+    same = re.findall(r'data-spy="([^"]+)" data-orig="([^"]+)"', svg2)
+    check("a SPY article toggles to itself", all(a == b for a, b in same))
+
+
+def test_ladder_straddles_the_price() -> None:
+    print("\n14d. the level ladder shows both sides of the market")
+    from core import read_viz as V
+    levels = [{"spy": 760 + i, "n": 3, "kind": "support"} for i in range(-8, 9)]
+    html = V.ladder(levels, 760.0, "SPY", None, rows=9)
+    prices = [float(p.replace(",", ""))
+              for p in re.findall(r'data-spy="([^"]+)"', html)]
+    above = [p for p in prices if p > 760.0]
+    below = [p for p in prices if p < 760.0]
+    check("levels above the price are shown", len(above) >= 3, f"{len(above)}")
+    check("levels below the price are shown", len(below) >= 3, f"{len(below)}")
+    check("the now marker is present", "rung now" in html)
+    # ⛔ MUTATION PROOF: handing it a price-sorted top-N (the original bug)
+    # yields a one-sided ladder.
+    one_sided = V.ladder(sorted(levels, key=lambda r: -r["spy"])[:6], 760.0,
+                         "SPY", None, rows=9)
+    op = [float(p.replace(",", "")) for p in re.findall(r'data-spy="([^"]+)"', one_sided)]
+    check("(proof) a pre-truncated set IS one-sided",
+          len([p for p in op if p < 760.0]) <= 1,
+          f"{len([p for p in op if p < 760.0])} below")
 
 
 def test_research_refresh_never_destroys_a_read() -> None:

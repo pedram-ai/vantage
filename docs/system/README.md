@@ -29,7 +29,8 @@ page reads these files off disk at request time and stamps them with the build t
 | [10](./10-email.md) | **Email** | The weekday briefing, SES, and the sent archive |
 | [11](./11-deploy-and-versioning.md) | **Deploy & versioning** | How a change reaches production and how you know it did |
 | [12](./12-testing.md) | **Testing** | The nine suites, and why a green typecheck proves nothing |
-| [13](./13-research.md) | **Research** | Substack in, a read on SPY/QQQ out, and what keeps it honest |
+| [13](./13-research.md) | **Research** | Substack in, a read on SPY out, and what keeps it honest |
+| [14](./14-spy-conversion.md) | **SPY conversion** | Why the model never does the arithmetic, and why the ratio is dated |
 
 ## How to read a document
 

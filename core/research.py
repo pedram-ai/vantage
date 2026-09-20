@@ -186,6 +186,94 @@ def refresh(limit_per_source: int = 20) -> dict:
     return {"added": added, "already_had": kept, "at": now_iso()}
 
 
+# Substack serves the same post under several URLs: the publication URL, the
+# reader URL (`substack.com/home/post/p-<id>`), and either with tracking query
+# strings. They hash differently, so without normalising, pasting from the
+# reader creates a DUPLICATE instead of upgrading the post already held.
+# ⚠ Measured 2026-09-20: that is exactly what happened on the first real use.
+_READER_URL = re.compile(r"^https?://(?:www\.)?substack\.com/(?:home/post|p)/", re.I)
+
+
+def canonical_url(url: str) -> str:
+    """The publication URL for a post. Falls back to the input, cleaned."""
+    url = (url or "").strip()
+    if not url:
+        return ""
+    # strip tracking + fragment first — they never identify a different post
+    url = url.split("#", 1)[0]
+    if "?" in url:
+        head, q = url.split("?", 1)
+        keep = [kv for kv in q.split("&")
+                if kv.split("=", 1)[0].lower() not in
+                ("utm_source", "utm_medium", "utm_campaign", "utm_content",
+                 "utm_term", "r", "showwelcome", "triedredirect", "post_id",
+                 "publication_id", "isfreemail", "token", "email")]
+        url = head + ("?" + "&".join(keep) if keep else "")
+    url = url.rstrip("/")
+
+    if _READER_URL.match(url):
+        # ⚠ One network call, and only for the reader form. It 200s and lands
+        # on the publication URL; if it fails we keep what we were given
+        # rather than inventing a canonical form.
+        try:
+            from curl_cffi import requests as cr
+            r = cr.get(url, impersonate="chrome", timeout=15, allow_redirects=True)
+            final = str(r.url).split("#", 1)[0].split("?", 1)[0].rstrip("/")
+            if final and "substack.com" in final and not _READER_URL.match(final):
+                return final
+        except Exception:  # noqa: BLE001
+            pass
+    return url
+
+
+def _strip_page_chrome(body: str, teaser: str = "") -> str:
+    """Remove the header a browser copy picks up above the post itself.
+
+    ⭐ THE TEASER WE ALREADY HOLD IS THE ANCHOR. Its opening words are the
+    post's real first words, so finding them in the pasted text says exactly
+    where the article begins — no guessing at what a byline looks like.
+
+    With no teaser, only lines that are plainly chrome are dropped, and the cut
+    is abandoned if it would remove more than a quarter of the text. Losing
+    real analysis is worse than keeping a byline.
+    """
+    body = (body or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not body:
+        return body
+
+    anchor = " ".join((teaser or "").split())[:60].strip()
+    if len(anchor) >= 25:
+        flat = " ".join(body.split())
+        i = flat.find(anchor)
+        if i > 0:
+            # map the position in the flattened text back to the real one
+            words = anchor.split()
+            j = body.find(words[0])
+            while j > 0:
+                if " ".join(body[j:j + 400].split()).startswith(anchor):
+                    return body[j:].strip()
+                j = body.find(words[0], j + 1)
+
+    lines = body.split("\n")
+    drop = 0
+    for k, ln in enumerate(lines[:8]):
+        t = ln.strip()
+        if not t:
+            drop = k + 1
+            continue
+        # publication name, title, byline, a bare date, share/subscribe chrome
+        if (len(t) < 60 and (re.match(r"(?i)^(share|subscribe|listen|\d+ likes?|"
+                                      r"\d+ comments?)\b", t)
+                             or re.match(r"(?i)^[A-Z][a-z]{2}\s+\d{1,2},\s+\d{4}$", t)
+                             or t.endswith("Newsletter"))):
+            drop = k + 1
+        else:
+            break
+    if drop and drop < len(lines) and len("\n".join(lines[drop:])) > len(body) * 0.75:
+        return "\n".join(lines[drop:]).strip()
+    return body
+
+
 def add_manual(title: str, body: str, url: str = "", source_label: str = "") -> dict:
     """Save an article pasted in by hand, or UPGRADE a teaser already held.
 
@@ -206,11 +294,14 @@ def add_manual(title: str, body: str, url: str = "", source_label: str = "") -> 
     if len(body) < 200:
         raise ValueError("That is too short to be a post — paste the full text.")
 
-    url = (url or "").strip()
+    url = canonical_url(url)
     aid = (hashlib.sha256(url.encode()).hexdigest()[:24] if url
            else hashlib.sha256(f"manual:{title}".encode()).hexdigest()[:24])
 
     existing = get_article(aid) or {}
+    # ⛔ Strip the page furniture a browser copy drags in, using the teaser we
+    # already hold as the anchor for where the post actually starts.
+    body = _strip_page_chrome(body, existing.get("body", "") if existing.get("paywalled") else "")
     if len(existing.get("body") or "") > len(body):
         raise ValueError(
             f"We already hold a longer version of this ({len(existing['body'])} "
@@ -243,15 +334,54 @@ def add_manual(title: str, body: str, url: str = "", source_label: str = "") -> 
 PREVIEW_CHARS = 1400
 
 
+def _within(rows: list[dict], days: int) -> list[dict]:
+    """⚠ days=0 means ALL, deliberately — a filter that silently defaults to a
+    window would hide articles and look like an empty archive."""
+    if not days:
+        return rows
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    return [r for r in rows if (r.get("published_at") or "") >= cutoff]
+
+
+def timeline(source: str = "", days: int = 0) -> list[dict]:
+    """The left rail: every article newest-first, grouped by month."""
+    rows = _within(_list_all(source), days)
+    out, seen = [], None
+    for r in rows:
+        month = (r.get("published_at") or "")[:7] or "unknown"
+        if month != seen:
+            out.append({"month": month, "heading": True,
+                        "label": _month_label(month)})
+            seen = month
+        rd = r.get("read") or {}
+        out.append({
+            "heading": False, "id": r["id"], "title": r.get("title", ""),
+            "day": (r.get("published_at") or "")[8:10],
+            "date": r.get("published_at"),
+            "bias": rd.get("bias"), "paywalled": r.get("paywalled"),
+            "read": bool(rd),
+        })
+    return out
+
+
+def _month_label(m: str) -> str:
+    from datetime import datetime
+    try:
+        return datetime.strptime(m, "%Y-%m").strftime("%B %Y")
+    except ValueError:
+        return m
+
+
 def list_articles(limit: int = 60, source: str = "", preview: bool = False,
-                  page: int = 1, per_page: int = 12) -> dict | list[dict]:
+                  page: int = 1, per_page: int = 12, days: int = 0) -> dict | list[dict]:
     """`preview=True` returns a PAGE of articles with shortened bodies.
 
     ⚠ The full set is 40 posts of up to 13k characters — rendering every body
     made the page a 218 KB document to show twelve headlines. The list carries
     a preview and links to the full text; nothing is hidden, it is one click.
     """
-    rows = _list_all(source)
+    rows = _within(_list_all(source), days)
     if not preview:
         return rows[:limit]
     per_page = max(1, per_page)
@@ -314,56 +444,140 @@ def pt_date(iso: str | None) -> str:
 
 # --- the read ---------------------------------------------------------------
 
-SYSTEM = """You read one market-commentary article and report what IT says about \
-SPY and QQQ. You are writing for the trader who saved it.
+SYSTEM = """You read one market-commentary article and extract the trade it \
+describes, for SPY.
+
+These articles are usually written about ES futures or SPX. That is fine — a \
+view on ES or SPX IS a view on SPY. Report every price EXACTLY AS THE ARTICLE \
+WROTE IT and say which instrument it is in; the conversion to SPY is done \
+afterwards in code, with the exchange rate that applied on the day the article \
+was published.
+
+⛔ NEVER convert a price yourself. Never divide ES by 10. Never compute a \
+percentage. Report the numbers on the page.
 
 Hard rules:
-- Report only what the article states or plainly implies. NEVER invent a price \
-level, a number, a date or a view the article does not contain.
-- If the article does not address a horizon or an instrument, say so in the \
-`note` and set direction to "not stated". An honest gap beats a guess.
-- `basis` must quote or closely paraphrase the actual sentence you relied on. \
-If you cannot point to one, the direction is "not stated".
-- Many of these articles are about ES/SPX futures. ES and SPX track SPY \
-closely, so a view on them IS a view on SPY — say which the article used.
-- No advice, no recommendation to buy or sell, no price targets of your own.
+- Only what the article states or plainly implies. Never invent a level, a \
+target, a date or a view it does not contain.
+- `basis` must quote the sentence you relied on. No sentence ⇒ "not stated".
+- Most daily plans are CONDITIONAL — "above X target Y, below X target Z". \
+That is shape "range" with the pivot as `activation`, not a direction. Only \
+call it directional when the article actually commits to one side.
+- `reference_level` is the price the article treats as "here" — the last \
+close, the spot, or the pivot it builds everything around.
+- No advice, no recommendation, no target of your own."""
 
-Write plainly. One or two sentences per field."""
+_LEVELS = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string", "description": "What the article calls it."},
+            "price": {"type": "number", "description": "Verbatim, in the article's units."},
+            "kind": {"type": "string",
+                     "enum": ["support", "resistance", "pivot", "target", "other"]},
+        },
+        "required": ["label", "price", "kind"],
+    },
+}
 
-_DIR = {"type": "string", "enum": ["up", "down", "choppy", "not stated"]}
 
-
-def _horizon(desc: str) -> dict:
+def _leg(desc: str) -> dict:
     return {
         "type": "object",
         "properties": {
-            "direction": _DIR,
-            "note": {"type": "string", "description": f"One or two sentences: {desc}"},
-            "basis": {"type": "string",
-                      "description": "The sentence from the article this rests on, "
-                                     "or empty if none."},
+            "shape": {"type": "string", "enum": ["directional", "range", "not stated"],
+                      "description": "range = conditional on a pivot."},
+            "direction": {"type": "string", "enum": ["up", "down", "none"],
+                          "description": "Only meaningful when shape is directional."},
+            "target": {"type": "number",
+                       "description": f"Where it goes, in the article's units — {desc}. "
+                                      "Omit if none is given."},
+            "range_low": {"type": "number", "description": "Lower bound, article's units."},
+            "range_high": {"type": "number", "description": "Upper bound, article's units."},
+            "activation": {"type": "string",
+                           "description": "What has to happen first, in words — the trigger "
+                                          "or pivot. Empty if unconditional."},
+            "activation_level": {"type": "number",
+                                 "description": "The trigger PRICE, in the article's own "
+                                                "units. Omit if there is no single level."},
+            "activation_low": {"type": "number",
+                               "description": "If the trigger is a zone, its lower bound, "
+                                              "article's units."},
+            "activation_high": {"type": "number",
+                                "description": "If the trigger is a zone, its upper bound."},
+            "note": {"type": "string", "description": "One sentence, plain."},
+            "basis": {"type": "string", "description": "The sentence this rests on."},
         },
-        "required": ["direction", "note", "basis"],
+        "required": ["shape", "direction", "activation", "note", "basis"],
     }
 
 
 SCHEMA = {
     "type": "object",
     "properties": {
-        "gist": {"type": "string",
-                 "description": "One or two sentences: what this article is about."},
-        "spy_24h": _horizon("what it implies for SPY over the next 24 hours"),
-        "qqq_24h": _horizon("what it implies for QQQ over the next 24 hours"),
-        "spy_7d": _horizon("what it implies for SPY through the end of this week"),
-        "qqq_7d": _horizon("what it implies for QQQ through the end of this week"),
-        "levels": {"type": "array", "items": {"type": "string"},
-                   "description": "Price levels the article names, verbatim, with "
-                                  "the instrument. Empty if it names none."},
-        "confidence": {"type": "string", "enum": ["high", "medium", "low"],
-                       "description": "How clearly the article supports the above."},
+        "gist": {"type": "string", "description": "One or two sentences."},
+        "quoted_in": {"type": "string", "enum": ["ES", "SPX", "SPY", "unclear"],
+                      "description": "Which instrument the article's prices are in."},
+        "reference_level": {"type": "number",
+                            "description": "The price the article treats as 'here', "
+                                           "in its own units."},
+        "bias": {"type": "string", "enum": ["bullish", "bearish", "neutral"]},
+        "conviction": {"type": "string", "enum": ["high", "medium", "low"]},
+        "h24": _leg("over the next 24 hours"),
+        "week": _leg("through the end of this week"),
+        "levels": _LEVELS,
     },
-    "required": ["gist", "spy_24h", "qqq_24h", "spy_7d", "qqq_7d", "levels", "confidence"],
+    "required": ["gist", "quoted_in", "bias", "conviction", "h24", "week", "levels"],
 }
+
+
+def _convert_read(raw: dict, published_at: str | None) -> dict:
+    """Turn the model's verbatim numbers into SPY levels. ⛔ ALL ARITHMETIC IS HERE."""
+    from . import convert
+
+    unit = raw.get("quoted_in") or "unclear"
+    r = convert.ratio_on((published_at or "")[:10] or None)
+    out = dict(raw)
+    out["ratio"] = round(r["es_spy"], 4)
+    out["ratio_asof"] = r.get("asof")
+    out["ratio_measured"] = r.get("measured", False)
+
+    def conv(v):
+        spy = convert.to_spy(v, unit, r)
+        # ⛔ A level that fails the band did not convert — most likely the unit
+        # was wrong. Drop it rather than render 7697 as a SPY price.
+        return spy if convert.plausible_spy(spy) else None
+
+    ref = conv(raw.get("reference_level"))
+    out["spy_ref"] = ref
+
+    for key in ("h24", "week"):
+        leg = dict(raw.get(key) or {})
+        leg["spy_target"] = conv(leg.get("target"))
+        leg["spy_low"] = conv(leg.get("range_low"))
+        leg["spy_high"] = conv(leg.get("range_high"))
+        # ⛔ The trigger is a PRICE and must convert like any other. It shipped
+        # in the prototype as a bare ES number sitting in a SPY sentence.
+        leg["spy_activation"] = conv(leg.get("activation_level"))
+        leg["spy_act_low"] = conv(leg.get("activation_low"))
+        leg["spy_act_high"] = conv(leg.get("activation_high"))
+        # move, as a signed percentage of the reference — derived, never asked for
+        t = leg["spy_target"]
+        leg["move_pct"] = (round((t - ref) / ref * 100, 2)
+                           if (t is not None and ref) else None)
+        leg["move_pts"] = round(t - ref, 2) if (t is not None and ref) else None
+        out[key] = leg
+
+    lv = []
+    for l in (raw.get("levels") or []):
+        spy = conv(l.get("price"))
+        if spy is None:
+            continue
+        lv.append({**l, "spy": spy})
+    out["levels"] = lv
+    return out
+
 
 MAX_CHARS = 24_000
 
@@ -386,6 +600,7 @@ def summarise(article: dict, force: bool = False) -> dict:
     out, err = llm.generate(SYSTEM, prompt, SCHEMA)
     if out is None:
         return {"ok": False, "reason": err or "no answer"}
+    out = _convert_read(out, article.get("published_at"))
 
     db().collection(ARTICLES).document(article["id"]).set({
         "read": out,
@@ -466,3 +681,112 @@ def start_summarise(limit: int = 8) -> dict:
 
     _th.Thread(target=run, daemon=True).start()
     return {"started": True, "total": len(pending)}
+
+
+# --- synthesis --------------------------------------------------------------
+
+def _cluster(levels: list[float], tol: float = 1.5) -> list[list[float]]:
+    """Group SPY levels that are effectively the same price.
+
+    ⚠ Two authors writing 7697 and 7700 in ES are talking about the same
+    shelf; at ~10.1 to the point that is 0.3 SPY apart. Listing them separately
+    would imply two levels where the market has one. `tol` is in SPY points.
+
+    ⛔ THE WIDTH OF A CLUSTER IS BOUNDED, NOT THE GAP BETWEEN NEIGHBOURS.
+    Comparing each price to the PREVIOUS one chains: a ladder of levels each
+    1.4 apart merges end to end, and the real book produced a single fake
+    level reading "765.99 ×63" spanning tens of points. Comparing to the
+    cluster's FIRST member caps every cluster at `tol` wide, so a cluster is
+    always a price you could actually trade against.
+    """
+    out: list[list[float]] = []
+    for p in sorted(levels):
+        if out and p - out[-1][0] <= tol:
+            out[-1].append(p)
+        else:
+            out.append([p])
+    return out
+
+
+def outlook(days: int = 10, now_spy: float | None = None) -> dict:
+    """What the recent articles, taken together, say about SPY.
+
+    ⛔ THIS IS ARITHMETIC OVER WHAT WAS EXTRACTED, NOT A SECOND OPINION. No
+    model runs here. Every figure traces to an article you can open, and the
+    count of articles behind each one is shown — a consensus of two is not a
+    consensus and must not look like one.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    rows = [a for a in _list_all()
+            if isinstance(a.get("read"), dict)
+            and "spy_ref" in a["read"]
+            and (a.get("published_at") or "") >= cutoff]
+
+    if not rows:
+        return {"empty": True, "days": days, "n": 0}
+
+    bias = {"bullish": 0, "bearish": 0, "neutral": 0}
+    for a in rows:
+        b = (a["read"].get("bias") or "neutral").lower()
+        if b in bias:
+            bias[b] += 1
+
+    def leg_view(key: str) -> dict:
+        legs = [a["read"].get(key) or {} for a in rows]
+        shapes = [l.get("shape") for l in legs]
+        targets = [l["spy_target"] for l in legs if l.get("spy_target") is not None]
+        lows = [l["spy_low"] for l in legs if l.get("spy_low") is not None]
+        highs = [l["spy_high"] for l in legs if l.get("spy_high") is not None]
+        ups = sum(1 for l in legs if l.get("direction") == "up"
+                  and l.get("shape") == "directional")
+        downs = sum(1 for l in legs if l.get("direction") == "down"
+                    and l.get("shape") == "directional")
+        return {
+            "n": len(legs),
+            "stated": sum(1 for s in shapes if s and s != "not stated"),
+            "ranges": sum(1 for s in shapes if s == "range"),
+            "up": ups, "down": downs,
+            # ⛔ MEDIAN, not mean. One article quoting a far target would drag
+            # a mean somewhere no author actually named.
+            "target": (sorted(targets)[len(targets) // 2] if targets else None),
+            "targets_n": len(targets),
+            "low": min(lows) if lows else None,
+            "high": max(highs) if highs else None,
+            "band_n": len(lows) + len(highs),
+        }
+
+    # levels, clustered and ranked by how many articles name them
+    named: list[tuple[float, str, str]] = []
+    for a in rows:
+        for l in (a["read"].get("levels") or []):
+            if l.get("spy") is not None:
+                named.append((float(l["spy"]), l.get("kind", "other"),
+                              a.get("title", "")))
+    groups = _cluster([p for p, _, _ in named])
+    levels = []
+    for g in groups:
+        mid = round(sum(g) / len(g), 2)
+        kinds = [k for p, k, _ in named if g[0] - 0.01 <= p <= g[-1] + 0.01]
+        kind = max(set(kinds), key=kinds.count) if kinds else "other"
+        levels.append({"spy": mid, "n": len(g), "kind": kind,
+                       "above": (now_spy is not None and mid > now_spy)})
+    levels.sort(key=lambda r: (-r["n"], r["spy"]))
+
+    return {
+        "empty": False, "days": days, "n": len(rows),
+        "bias": bias,
+        "lean": max(bias, key=bias.get) if any(bias.values()) else "neutral",
+        "h24": leg_view("h24"),
+        "week": leg_view("week"),
+        # ⛔ `levels` is the TOP-N BY ARTICLE COUNT, for a list.
+        # `levels_all` is EVERYTHING, for the ladder — which selects by
+        # proximity to price itself. Handing the ladder a pre-truncated set
+        # sorted by price gave it only levels ABOVE the market, so the "now"
+        # marker sat at the bottom with nothing beneath it.
+        "levels": levels[:10],
+        "levels_all": sorted(levels, key=lambda r: -r["spy"]),
+        "newest": rows[0].get("published_at"),
+        "oldest": rows[-1].get("published_at"),
+    }

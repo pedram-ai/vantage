@@ -36,147 +36,242 @@
 
   {# ---------------------------------------------------------------- ARTICLES #}
   {% if tab == 'articles' %}
-    <div class="pills">
-      <span class="plab">{{ counts.total }} saved</span>
-      <span class="pill">{{ counts.summarised }} read</span>
-      {% if counts.pending %}<span class="pill">{{ counts.pending }} pending</span>{% endif %}
-      {% if counts.paywalled %}
-      <span class="pill" title="Substack published only a teaser for these. Summarising a teaser
-would produce a confident read of an advertisement, so they are left alone.">{{ counts.paywalled }} paywalled</span>
-      {% endif %}
-      <form method="post" action="/research/refresh" class="inline" style="margin-left:auto">
-        <button class="btn ghost" type="submit">&#8635; Fetch new</button>
-      </form>
-      {% if counts.pending %}
-      <form method="post" action="/research/read" class="inline">
-        <input type="hidden" name="limit" value="8">
-        <button class="btn" type="submit" {{ 'disabled' if job.running }}>
-          {{ 'Reading…' if job.running else 'Read next 8' }}</button>
-      </form>
-      {% endif %}
-    </div>
 
     {% if pasted %}
     <div class="banner">Article {{ pasted }}{% if was %} — replaced a {{ was }}-character
       teaser with {{ now }} characters{% endif %}. Reading it now.</div>
     {% endif %}
-
     {% if job.running %}
     <div class="banner" id="jobbar">Reading {{ job.done }} of {{ job.total }}…
-      <span class="faint">about 18 seconds each; you can leave this page.</span></div>
-    {% elif job.finished and job.failed %}
-    <div class="banner warn">{{ job.failed|length }} could not be read:
-      {% for f in job.failed[:3] %}<span class="faint">{{ f.title[:40] }} — {{ f.reason }}</span>{% endfor %}</div>
+      <span class="faint">about 15 seconds each; you can leave this page.</span></div>
     {% endif %}
-
     {% if not llm.credentials %}
     <div class="banner warn">No Google credentials — reads cannot run.</div>
-    {% elif llm.last_error and not counts.summarised %}
-    <div class="banner warn">{{ llm.model or 'Gemini' }}: {{ llm.last_error[:160] }}</div>
     {% endif %}
 
-    {% if not articles %}
-    <div class="card empty"><p>Nothing saved yet. <b>Fetch new</b> pulls the latest posts
-      from every source.</p></div>
-    {% endif %}
-
-    {% for a in articles %}
-    <div class="card art">
-      <div class="arthead">
-        <div>
-          <h2>{{ a.title }}</h2>
-          <p class="faint">{{ a.source_label }} · {{ a.published_at|pt_date }} ·
-            {{ a.chars }} chars ·
-            <a href="{{ a.url }}" target="_blank" rel="noopener">open on Substack &#8599;</a></p>
-        </div>
-        {% if a.read %}<span class="chip conf-{{ a.read.confidence }}">{{ a.read.confidence }} confidence</span>
-        {% elif a.paywalled %}<span class="chip off">teaser only</span>
-        {% else %}<span class="chip wait">not read yet</span>{% endif %}
-      </div>
-
-      <div class="artbody">
-        {# LEFT: the article itself, saved here in full #}
-        <div class="artext">
-          {% if a.paywalled %}
-          <p class="muted">Substack published only a teaser for this post — the full text is
-            behind the paywall, so there is nothing here to read.</p>
-          {% endif %}
-          <div class="prose">{{ a.body }}</div>
-          {% if a.truncated %}
-          <p class="faint" style="margin-top:9px">
-            <a href="/research/{{ a.id }}">Full text &rarr;</a></p>
-          {% endif %}
+    {# ============ SYNTHESIS ============ #}
+    {% if outlook and not outlook.empty %}
+    <div class="synth">
+      <div class="card">
+        <div class="synthtop">
+          <div>
+            <div class="lab">Where the desk leans</div>
+            <div class="leanrow">
+              {% set lean = outlook.lean %}
+              {% set conditional = outlook.h24.ranges %}
+              <span class="lean {{ lean }}">
+                {%- if conditional > outlook.n / 2 -%}mostly conditional
+                {%- else -%}{{ lean }}{%- endif -%}</span>
+              <span class="split">
+                {% if outlook.bias.bullish %}<i style="width:{{ outlook.bias.bullish * 13 }}px;background:var(--up)"></i>{% endif %}
+                {% if outlook.bias.bearish %}<i style="width:{{ outlook.bias.bearish * 13 }}px;background:var(--down)"></i>{% endif %}
+                {% if outlook.bias.neutral %}<i style="width:{{ outlook.bias.neutral * 13 }}px;background:var(--faint);opacity:.45"></i>{% endif %}
+              </span>
+            </div>
+            <p class="faint" style="margin:6px 0 0">
+              {{ outlook.bias.bullish }} bullish · {{ outlook.bias.bearish }} bearish ·
+              {{ outlook.bias.neutral }} take no side until a level breaks
+              <span class="sep">·</span> {{ outlook.n }} posts, last 14 days</p>
+          </div>
+          <div style="text-align:right">
+            <div class="lab">SPY now</div>
+            <div class="bignum fig">{{ '%.2f'|format(spy_now) if spy_now else '—' }}</div>
+          </div>
         </div>
 
-        {# RIGHT: what it means for SPY and QQQ #}
-        <aside class="artread">
-          {% if a.read %}
-            <p class="gist">{{ a.read.gist }}</p>
-            {% for label, key in [('Next 24 hours','24h'), ('Through Friday','7d')] %}
-            <div class="horizon">
-              <div class="hlab">{{ label }}</div>
-              {% for sym in ['spy','qqq'] %}
-              {% set h = a.read[sym ~ '_' ~ key] %}
-              <div class="hrow">
-                <span class="hsym">{{ sym|upper }}</span>
-                <span class="dir d-{{ h.direction|replace(' ','-') }}">{{ h.direction }}</span>
-                <span class="hnote">{{ h.note }}</span>
-              </div>
-              {% if h.basis %}<div class="hbasis" title="The sentence this rests on">&ldquo;{{ h.basis }}&rdquo;</div>{% endif %}
-              {% endfor %}
+        <div class="horizons">
+          {% for key, title in [('h24','Next 24 hours'), ('week','Through Friday')] %}
+          {% set L = outlook[key] %}
+          <div class="hz">
+            <div class="lab">{{ title }}</div>
+            {% if L.low is not none and L.high is not none %}
+            <div class="hzband">
+              <span class="v fig">{{ '%.2f'|format(L.low) }}</span><span class="to">–</span>
+              <span class="v fig">{{ '%.2f'|format(L.high) }}</span>
             </div>
-            {% endfor %}
-            {% if a.read.levels %}
-            <div class="horizon">
-              <div class="hlab">Levels named</div>
-              <div class="lvls">{% for l in a.read.levels %}<span class="lvl">{{ l }}</span>{% endfor %}</div>
-            </div>
+            {% elif L.target is not none %}
+            <div class="hzband"><span class="v fig">{{ '%.2f'|format(L.target) }}</span></div>
+            {% else %}
+            <div class="hzband"><span class="v faint" style="font-size:15px">no band stated</span></div>
             {% endif %}
-            <p class="faint">Read by {{ a.read_model or 'Gemini' }} from the article text only —
-              it is given nothing else and quotes the sentence each call rests on.</p>
-          {% elif a.paywalled %}
-            <p class="muted">Not read.</p>
-            <p class="faint">Only a teaser was published. A read of a teaser would describe the
-              advertisement, not the analysis.</p>
-          {% else %}
-            <p class="muted">Not read yet.</p>
-            <p class="faint">Use <b>Read next 8</b> above.</p>
-          {% endif %}
-        </aside>
+            <div class="hzmeta">
+              {% if L.target is not none %}Median target
+                <b class="fig">{{ '%.2f'|format(L.target) }}</b>
+                {% if L.targets_n == 1 %}<span class="faint">— from one article only</span>
+                {% else %}<span class="faint">across {{ L.targets_n }}</span>{% endif %}
+              {% else %}Nothing here names a target.{% endif %}
+            </div>
+            <div class="srcline">
+              <span class="srcbar">
+                <i style="width:{{ (L.stated / L.n * 100)|round }}%;background:var(--accent)"></i>
+                <i style="width:{{ 100 - (L.stated / L.n * 100)|round }}%"></i></span>
+              <span>{{ L.stated }} of {{ L.n }} say something{% if L.ranges %} ·
+                {{ L.ranges }} conditional{% endif %}</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
       </div>
-    </div>
-    {% endfor %}
 
-    {% if feed.pages > 1 %}
-    <div class="pills">
-      <span class="plab">Page</span>
-      {% if feed.page > 1 %}
-      <a class="pill" href="/research?page={{ feed.page - 1 }}{{ '&source=' ~ source if source }}">&larr; Prev</a>
-      {% endif %}
-      {% for n in range(1, feed.pages + 1) %}
-      <a class="pill {{ 'on' if n == feed.page }}"
-         href="/research?page={{ n }}{{ '&source=' ~ source if source }}">{{ n }}</a>
-      {% endfor %}
-      {% if feed.page < feed.pages %}
-      <a class="pill" href="/research?page={{ feed.page + 1 }}{{ '&source=' ~ source if source }}">Next &rarr;</a>
-      {% endif %}
-      <span class="faint" style="margin-left:8px">{{ feed.total }} saved</span>
+      <div class="card ladcard">
+        <div class="ladderhead"><span class="lab">Levels named</span>
+          <span class="faint">× articles</span></div>
+        {{ ladder|safe }}
+        <p class="faint ladnote">Clustered within 1.50 pts. Bar length is how many
+          articles name it — not how strong it is.</p>
+      </div>
     </div>
     {% endif %}
 
-  {# ------------------------------------------------------------------ CHARTS #}
-  {% elif tab == 'charts' %}
-    <div class="card">
-      <h1>Charts</h1>
-      <p class="muted">Session structure for every symbol you track.</p>
-      <div class="pills">
-        {% for s in sources %}{% endfor %}
-        <a class="pill" href="/">Today &rarr;</a>
-        <a class="pill" href="/markets">Markets &rarr;</a>
+    {# ============ CONTROLS ============ #}
+    <div class="filters">
+      <span class="lab">Window</span>
+      {% for d, l in [(7,'7 days'), (30,'30 days'), (90,'90 days'), (0,'All ' ~ counts.total)] %}
+      <a class="pill {{ 'on' if days == d }}"
+         href="/research?days={{ d }}{{ '&source=' ~ source if source }}">{{ l }}</a>
+      {% endfor %}
+      <span class="gap"></span>
+      <span class="lab">Publication</span>
+      <a class="pill {{ 'on' if not source }}"
+         href="/research?days={{ days }}">Both</a>
+      {% for s in sources %}
+      <a class="pill {{ 'on' if source == s.id }}"
+         href="/research?source={{ s.id }}&days={{ days }}">{{ s.label.split(' · ')[0] }}</a>
+      {% endfor %}
+      <span class="gap"></span>
+      {# ⭐ The unit toggle. Both values are already in the markup; this only
+         changes which is shown, so it cannot disagree with the other. #}
+      <span class="lab">Show</span>
+      <button type="button" class="pill on" id="u-spy" data-unit="spy">SPY</button>
+      <button type="button" class="pill" id="u-orig" data-unit="orig">As written</button>
+      <span style="margin-left:auto" class="faint">Newest first</span>
+      <form method="post" action="/research/refresh" class="inline">
+        <button class="btn ghost" type="submit">&#8635; Fetch</button></form>
+      {% if counts.pending %}
+      <form method="post" action="/research/read" class="inline">
+        <input type="hidden" name="limit" value="8">
+        <button class="btn" type="submit" {{ 'disabled' if job.running }}>Read
+          {{ counts.pending }}</button></form>
+      {% endif %}
+    </div>
+
+    {# ============ TIMELINE + ARTICLES ============ #}
+    <div class="rbody">
+      <nav class="tl">
+        {% for t in timeline %}
+        {% if t.heading %}<div class="tlmonth">{{ t.label }}</div>
+        {% else %}
+        <a class="tli" href="#a{{ t.id }}">
+          <span class="d fig">{{ t.day }}</span>
+          <span class="t"><i class="dot {{ 'locked' if t.paywalled else (t.bias or 'neutral') }}"></i>{{ t.title }}</span>
+        </a>
+        {% endif %}
+        {% endfor %}
+        <p class="faint tlfoot">Hollow dot = paywalled, not read.</p>
+      </nav>
+
+      <div>
+      {% if not articles %}
+      <div class="card empty"><p>Nothing in this window.</p></div>
+      {% endif %}
+
+      {% for a in articles %}
+      <article class="art" id="a{{ a.id }}">
+        <div class="arthead">
+          <div>
+            <h3>{{ a.title }}</h3>
+            <p class="faint">{{ a.source_label }} · {{ a.published_at|pt_date }}
+              {%- if a.viz %} · quoted in {{ a.viz.unit }}{% endif %} · {{ a.chars }} chars
+              {%- if a.pasted %} · <span class="tagp">pasted in</span>{% endif %}
+              · <a href="{{ a.url }}" target="_blank" rel="noopener">open &#8599;</a></p>
+          </div>
+          {% if a.read %}
+          <span class="biaschip {{ a.read.bias }}">{{ a.viz.bias|safe if a.viz }}
+            {{ a.read.bias }}</span>
+          {% elif a.paywalled %}<span class="chip off">teaser only</span>
+          {% else %}<span class="chip wait">not read</span>{% endif %}
+        </div>
+
+        <div class="artgrid">
+          <div class="artleft">
+            {% if a.read %}<p class="gist">{{ a.read.gist }}</p>{% endif %}
+            {% if a.paywalled %}
+            <p class="muted" style="font-size:12.5px">Substack published only a teaser.</p>
+            {% endif %}
+            <div class="excerpt">{{ a.body }}</div>
+            {% if a.truncated %}<a class="more" href="/research/{{ a.id }}">Full text &rarr;</a>{% endif %}
+          </div>
+
+          <aside class="artright">
+            {% if a.viz %}
+              {% for key, title in [('h24','Next 24 hours'), ('week','Through Friday')] %}
+              {% set L = a.read[key] %}
+              <div class="strip">
+                <div class="striphead"><span class="lab">{{ title }}</span>
+                  <span class="shape {{ 'none' if L.shape == 'not stated' }}">{{ L.shape }}</span></div>
+                {% if L.shape == 'not stated' %}
+                <p class="nostate">{{ L.note or 'Not addressed.' }}</p>
+                {% else %}
+                {{ a.viz[key]|safe }}
+                {% if L.activation %}
+                <p class="trigger">Activates on
+                  {% if a.viz.trig[key].px %}<b>{{ a.viz.trig[key].px|safe }}</b>{% endif %}
+                  <span class="faint">{{ L.activation }}</span></p>
+                {% endif %}
+                {% if L.note %}<p class="note">{{ L.note }}</p>{% endif %}
+                {% if L.basis %}<p class="basis">&ldquo;{{ L.basis }}&rdquo;</p>{% endif %}
+                {% endif %}
+              </div>
+              {% endfor %}
+
+              {% if a.viz.levels %}
+              <div class="lab" style="margin-bottom:4px">Levels</div>
+              <div class="lvls">
+                {% for l in a.viz.levels %}
+                <span class="lvl">{{ l.label }} <b>{{ l.px|safe }}</b></span>
+                {% endfor %}
+              </div>
+              {% endif %}
+
+              <p class="prov">Converted at <b class="fig">{{ a.viz.ratio }}</b>
+                {{ a.viz.unit }}/SPY — the closing ratio on <b>{{ a.viz.asof }}</b>,
+                not today's.</p>
+
+            {% elif a.paywalled %}
+              <p class="muted">Behind the paywall.</p>
+              <details class="pastebox">
+                <summary>Paste the full text</summary>
+                <form method="post" action="/research/paste">
+                  <input type="hidden" name="url" value="{{ a.url }}">
+                  <input type="hidden" name="title" value="{{ a.title }}">
+                  <input type="hidden" name="source_label" value="{{ a.source_label }}">
+                  <p class="faint" style="margin:7px 0">
+                    <a href="{{ a.url }}" target="_blank" rel="noopener">Open it &#8599;</a>,
+                    select all, copy, paste below. Header lines are trimmed automatically.</p>
+                  <textarea name="body" rows="6" required
+                            placeholder="Paste the whole post here…"></textarea>
+                  <button class="btn" type="submit">Save &amp; read</button>
+                </form>
+              </details>
+            {% else %}
+              <p class="muted">Not read yet.</p>
+            {% endif %}
+          </aside>
+        </div>
+      </article>
+      {% endfor %}
+
+      {% if feed.pages > 1 %}
+      <div class="filters">
+        <span class="lab">Page</span>
+        {% for n in range(1, feed.pages + 1) %}
+        <a class="pill {{ 'on' if n == feed.page }}"
+           href="/research?page={{ n }}&days={{ days }}{{ '&source=' ~ source if source }}">{{ n }}</a>
+        {% endfor %}
+        <span class="faint">{{ feed.total }} in this window</span>
       </div>
-      <p class="faint">Candlesticks with prior POC, VAH and VAL live on the symbol pages.
-        A research-specific chart view is not built yet — this links to what exists rather
-        than showing an empty frame.</p>
+      {% endif %}
+      </div>
     </div>
 
   {# ------------------------------------------------------------------- PASTE #}
@@ -270,6 +365,32 @@ would produce a confident read of an advertisement, so they are left alone.">{{ 
 {% endblock %}
 
 {% block scripts %}
+<script>
+/* Unit toggle. Every price already carries both values as data attributes, so
+   this only changes which one is displayed — the browser never does the
+   arithmetic, and the two units cannot drift apart on the same card.
+   ⚠ The choice is remembered, because switching back on every navigation is
+   the kind of small friction that makes a control go unused. */
+(function () {
+  var KEY = 'ar_unit';
+  function apply(u) {
+    document.querySelectorAll('.px').forEach(function (el) {
+      var v = el.getAttribute(u === 'orig' ? 'data-orig' : 'data-spy');
+      if (v) el.textContent = v;
+    });
+    document.querySelectorAll('[data-unit]').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-unit') === u);
+    });
+    try { localStorage.setItem(KEY, u); } catch (e) {}
+  }
+  document.querySelectorAll('[data-unit]').forEach(function (b) {
+    b.addEventListener('click', function () { apply(b.getAttribute('data-unit')); });
+  });
+  var saved = null;
+  try { saved = localStorage.getItem(KEY); } catch (e) {}
+  if (saved === 'orig') apply('orig');
+})();
+</script>
 {% if job.running %}
 <script>
 /* Poll while a read pass is running. ⚠ Reloads only when it FINISHES, so the

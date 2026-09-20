@@ -72,7 +72,11 @@ def _call(model: str, system: str, prompt: str, schema: dict | None) -> tuple[di
     body: dict = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 4096},
+        # ⚠ maxOutputTokens INCLUDES 2.5-pro's REASONING. Measured on a real
+        # article: 1,414 thought tokens against 610 of answer. At 4,096 a
+        # longer think truncates the JSON, and the failure then looks like a
+        # malformed model rather than a budget.
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 12288},
     }
     if schema:
         body["generationConfig"]["responseMimeType"] = "application/json"
@@ -98,7 +102,17 @@ def _call(model: str, system: str, prompt: str, schema: dict | None) -> tuple[di
         try:
             return json.loads(text), None
         except json.JSONDecodeError:
-            return None, "model returned non-JSON despite a response schema"
+            # ⛔ SAY WHICH FAILURE THIS IS. A truncated answer and a malformed
+            # one need different fixes, and "non-JSON" described both — which
+            # sent me looking at the schema when the cause was a token budget.
+            reason = cand.get("finishReason", "unknown")
+            used = (d.get("usageMetadata") or {})
+            if reason == "MAX_TOKENS":
+                return None, (f"answer truncated at the token limit "
+                              f"({used.get('candidatesTokenCount')} answer + "
+                              f"{used.get('thoughtsTokenCount')} reasoning)")
+            return None, (f"unparseable JSON ({len(text)} chars, "
+                          f"finishReason={reason})")
     except Exception as e:  # noqa: BLE001
         return None, str(e)[:160]
 

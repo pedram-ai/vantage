@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Argent Ridge{% endblock %}</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="alternate icon" href="/favicon.ico" sizes="32x32">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+{# Inlined data URIs: IAP gates every path, so a fetched icon 302s to a Google
+   sign-in page and the tab shows no icon at all. #}
+<link rel="icon" href="{{ icons.svg }}" type="image/svg+xml">
+<link rel="alternate icon" href="{{ icons.ico }}" sizes="32x32">
+<link rel="apple-touch-icon" href="{{ icons.png180 }}">
 <meta name="theme-color" content="#0f1a20">
 <style>
 :root{

@@ -148,3 +148,40 @@ def ico(size: int = 32) -> bytes:
     entry = struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32,
                         len(data), 22)
     return header + entry + data
+
+
+# --- inline data URIs -------------------------------------------------------
+# ⛔⛔ THE FAVICON MUST NOT BE A SEPARATE REQUEST. IAP fronts this service and
+# gates EVERY path, so a browser fetching /favicon.ico gets a 302 to Google
+# sign-in and renders HTML as an image — i.e. no icon at all. Verified live
+# 2026-09-20: /favicon.ico, /icon-32.png and /apple-touch-icon.png all returned
+# `302 text/html`.
+#
+# Inlining sidesteps it entirely: the icon arrives inside the page the browser
+# has already been authorised to load. The routes stay for anything that asks
+# for them directly, but the <link> tags no longer depend on them.
+#
+# ⚠ Built ONCE at import. The mark is fixed at build time and rasterising a
+# 180px PNG per request would be absurd.
+
+import base64 as _b64
+from urllib.parse import quote as _q
+
+_URIS: dict[str, str] = {}
+
+
+def data_uris() -> dict:
+    """{'svg':…, 'ico':…, 'png180':…} as data: URIs. Never raises."""
+    if _URIS:
+        return dict(_URIS)
+    try:
+        # SVG goes in percent-encoded — smaller than base64 for markup and it
+        # stays readable in view-source.
+        _URIS["svg"] = "data:image/svg+xml," + _q(svg(64), safe="")
+        _URIS["ico"] = ("data:image/x-icon;base64,"
+                        + _b64.b64encode(ico(32)).decode())
+        _URIS["png180"] = ("data:image/png;base64,"
+                           + _b64.b64encode(png(180)).decode())
+    except Exception:  # noqa: BLE001
+        _URIS.clear()
+    return dict(_URIS)
