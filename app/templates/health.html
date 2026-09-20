@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}System health · Argent Ridge{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>System health
+    <span class="chip {{ 'call' if h.level=='green' else ('wait' if h.level=='amber' else 'put') }}"
+          style="font-size:12.5px;vertical-align:middle">
+      {{ 'operational' if h.level=='green' else ('degraded' if h.level=='amber' else 'problem') }}</span>
+    <a class="pill" style="float:right" href="?force=1">&#8635; Refresh</a>
+  </h1>
+  <p class="muted">{{ h.project }} · {{ h.region }} · {{ h.generated_at }}</p>
+  {% for p in h.problems %}<div class="banner warn">{{ p }}</div>{% endfor %}
+</div>
+
+<div class="cols">
+  <div class="card">
+    <h2>Web service</h2>
+    <div class="tiles">
+      <div class="tile"><div class="t">State</div>
+        <div class="v" style="font-size:15px">{{ 'Ready' if h.service.ok else (h.service.error or h.service.state) }}</div>
+        <div class="n">{{ h.service.revision }}</div></div>
+      <div class="tile"><div class="t">CPU</div><div class="v">{{ h.service.cpu }}</div>
+        <div class="n">per instance</div></div>
+      <div class="tile"><div class="t">Memory</div><div class="v">{{ h.service.memory }}</div>
+        <div class="n">per instance</div></div>
+      <div class="tile"><div class="t">Instances</div>
+        <div class="v">{{ h.service.min_instances }}&ndash;{{ h.service.max_instances }}</div>
+        <div class="n">{{ 'always warm' if h.service.min_instances else 'scales to zero' }}</div></div>
+      <div class="tile"><div class="t">Front door</div>
+        <div class="v" style="font-size:15px">{{ 'IAP + login' if h.service.iap_enabled else 'App login' }}</div>
+        <div class="n">{{ h.service.ingress|replace('INGRESS_TRAFFIC_','')|lower }}</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Daily job</h2>
+    <div class="tiles">
+      <div class="tile"><div class="t">Status</div>
+        <div class="v" style="font-size:15px">{{ 'OK' if h.job.ok else (h.job.error or '—') }}</div>
+        <div class="n">{{ h.job.schedule or '' }}</div></div>
+      <div class="tile"><div class="t">Last run</div>
+        <div class="v" style="font-size:14px">{{ h.job.last_run[:16]|replace('T',' ') if h.job.last_run else '—' }}</div>
+        <div class="n">{{ h.job.last_name or '' }}</div></div>
+    </div>
+    <h2 style="margin-top:16px">Data freshness</h2>
+    <table>
+      <tr><td>Last morning run</td><td class="r fig">{{ h.freshness.last_daily_run or '—' }}</td></tr>
+      <tr><td>Verdict</td><td class="r">{{ h.freshness.last_run_verdict or '—' }}</td></tr>
+      <tr><td>Trade history</td><td class="r fig">{{ h.freshness.import_range or 'not imported' }}</td></tr>
+      <tr><td>Round trips</td><td class="r fig">{{ h.freshness.trades or '—' }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="cols">
+  <div class="card">
+    <h2>Database <span class="faint">Firestore · document counts</span></h2>
+    {% if h.counts.ok %}
+    <table>
+      {% for name, n in h.counts.collections.items() %}
+      <tr><td>{{ name }}</td><td class="r fig">{{ n if n is not none else '—' }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">{{ h.counts.error or 'unavailable' }}</p>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Dependencies</h2>
+    <table>
+      {% for d in h.dependencies %}
+      <tr><td>{{ d.label }}</td>
+        <td class="r"><span class="chip {{ 'call' if d.status=='reachable' else ('wait' if d.status in ('configured','not_configured') else 'put') }}">{{ d.status|replace('_',' ') }}</span></td>
+        <td class="sub">{{ d.detail }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Cost <span class="faint">estimate · {{ '$%.2f'|format(h.cost.monthly) }}/mo ·
+    {{ '$%.2f'|format(h.cost.yearly) }}/yr</span></h2>
+  <div class="tscroll"><table>
+    <thead><tr><th>Item</th><th>Detail</th><th class="r">Monthly</th></tr></thead>
+    <tbody>
+      {% for i in h.cost.lines %}
+      <tr><td>{{ i.label }}</td><td class="sub">{{ i.detail }}</td>
+        <td class="r fig">{{ '$%.2f'|format(i.monthly) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="faint" style="margin-top:10px">
+    <b>{{ 'Resource shape is live' if h.cost.live_resources else 'Resource shape unavailable — figures assume the configured defaults' }}.</b>
+    {{ h.cost.basis }}
+    {% for n in h.cost.notes %}<br>{{ n }}{% endfor %}
+    <br>{{ h.cost.avoided }}</p>
+</div>
+{% endblock %}

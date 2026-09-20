@@ -25,6 +25,7 @@ definitions:
           - python -m tests.test_instruments
           - python -m tests.test_schwab_import
           - python -m tests.test_auth
+          - python -m tests.test_admin
 
 pipelines:
   default:

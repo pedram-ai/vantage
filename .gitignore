@@ -28,3 +28,6 @@ Thumbs.db
 
 # Finder/sync duplicates
 *\ 2.*
+
+# generated at deploy time from git
+app/build_info.json

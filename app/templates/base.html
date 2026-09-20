@@ -126,16 +126,58 @@ form.inline{display:flex;flex-wrap:wrap;gap:7px;align-items:center;}
 .zone.call{background:var(--up);} .zone.put{background:var(--down);}
 .zone .t{font-family:var(--soft);font-weight:640;font-size:13.5px;margin-bottom:2px;}
 .zone .s{opacity:.8;font-size:11.5px;}
+.md h2{font-size:16px;margin:20px 0 8px;} .md h3{font-size:13px;margin:16px 0 6px;color:var(--ink);text-transform:none;letter-spacing:0;}
+.md h4,.md h5,.md h6{font-size:13px;margin:14px 0 6px;font-family:var(--soft);font-weight:640;}
+.md p{font-size:13.5px;line-height:1.6;margin:0 0 9px;} .md li{font-size:13.5px;margin-bottom:4px;}
+.md pre{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:11px 13px;
+        overflow-x:auto;font-size:12px;white-space:pre;}
+.md code{background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px;}
+.md table{margin:10px 0;font-size:12.5px;} .md hr{border:none;border-top:1px solid var(--line);margin:16px 0;}
 abbr{text-decoration:underline dotted rgba(140,155,170,.7);cursor:help;text-underline-offset:2px;}
+.avatar-wrap{position:relative;margin-left:16px;}
+.avatar-wrap summary::-webkit-details-marker{display:none;}
+.avatar{list-style:none;cursor:pointer;width:32px;height:32px;border-radius:50%;
+        background:var(--accent);color:#fff;font-family:var(--soft);font-weight:700;
+        font-size:14px;display:grid;place-items:center;user-select:none;}
+.avatar:hover{filter:brightness(1.1);}
+.avmenu{position:absolute;right:0;top:40px;z-index:50;min-width:226px;background:var(--card);
+        border:1px solid var(--line);border-radius:12px;padding:6px;
+        box-shadow:0 10px 34px rgba(12,22,34,.20);}
+.avhead{padding:10px 12px 11px;border-bottom:1px solid var(--line);margin-bottom:5px;}
+.avhead b{display:block;font-family:var(--soft);font-size:14px;}
+.avhead span{display:block;font-size:11.5px;color:var(--faint);}
+.avhead .avrole{display:inline-block;margin-top:6px;background:var(--accent-soft);
+                color:var(--accent);border-radius:999px;padding:1px 9px;font-size:10.5px;
+                font-weight:650;text-transform:uppercase;letter-spacing:.05em;}
+.avmenu a{display:block;padding:8px 12px;border-radius:8px;text-decoration:none;
+          color:var(--ink);font-size:13.5px;}
+.avmenu a:hover{background:var(--paper);}
+.avmenu a.avout{color:var(--down);border-top:1px solid var(--line);margin-top:5px;
+                padding-top:10px;border-radius:0 0 8px 8px;}
 </style>
 </head>
 <body>
 <header>
   <div class="htop">
     <a href="/" class="brand">ARGENT RIDGE</a>
-    {% if tape %}<div class="tape">
+    {% if tape %}<div class="tape" style="margin-left:auto">
       {% for t in tape %}<span>{{ t.symbol }} <b>{{ '%.2f'|format(t.price) if t.price else '—' }}</b></span>{% endfor %}
     </div>{% endif %}
+    {% if me %}
+    <details class="avatar-wrap" {% if not tape %}style="margin-left:auto"{% endif %}>
+      <summary class="avatar" title="{{ me.email }}">{{ (me.name or me.email)[:1]|upper }}</summary>
+      <div class="avmenu">
+        <div class="avhead">
+          <b>{{ me.name or me.email.split('@')[0] }}</b>
+          <span>{{ me.email }}</span>
+          <span class="avrole">{{ me.role }}</span>
+        </div>
+        <a href="/settings">Settings</a>
+        {% if me.role == 'owner' %}<a href="/admin">Admin console</a>{% endif %}
+        <a href="/logout" class="avout">Sign out</a>
+      </div>
+    </details>
+    {% endif %}
   </div>
   <nav>
     <a href="/" class="{{ 'on' if page=='today' }}">Today</a>
@@ -143,10 +185,6 @@ abbr{text-decoration:underline dotted rgba(140,155,170,.7);cursor:help;text-unde
     <a href="/positions" class="{{ 'on' if page=='positions' }}">Positions</a>
     <a href="/performance" class="{{ 'on' if page=='performance' }}">Performance</a>
     <a href="/settings" class="{{ 'on' if page=='settings' }}">Settings</a>
-    {% if me and me.role == 'owner' %}
-    <a href="/users" class="{{ 'on' if page=='users' }}">Users</a>
-    {% endif %}
-    {% if me %}<a href="/logout" style="margin-left:auto;opacity:.75">Sign out</a>{% endif %}
   </nav>
 </header>
 <main>

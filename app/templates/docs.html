@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Documentation · Argent Ridge{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Documentation</h1>
+  <p class="muted">Build {{ build.short or '—' }} on {{ build.branch or '—' }}{% if build.built_at %} ·
+    built {{ build.built_at[:16]|replace('T',' ') }} UTC{% endif %}</p>
+  {% if not build.available %}
+  <div class="banner warn">{{ build.error or 'No git history in this image — the change log below is empty because it could not be read, not because nothing changed.' }}</div>
+  {% endif %}
+</div>
+
+<div class="card">
+<div class="split-page">
+  <div class="rail">
+    <h3>Documents</h3>
+    <div class="lists">
+      <a class="li {{ 'on' if not doc }}" href="/admin/docs">Change log <span>{{ build.commits|length }}</span></a>
+      {% for d in docs %}
+      <a class="li {{ 'on' if doc and doc.slug == d.slug }}" href="/admin/docs?doc={{ d.slug }}"
+         title="{{ d.where }}">{{ d.title[:26] }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="railmain">
+    {% if doc %}
+      <h2>{{ doc.title }} <span class="faint">{{ doc.where }}</span></h2>
+      <div class="md">{{ rendered|safe }}</div>
+    {% else %}
+      <h2>Change log <span class="faint">every commit, generated from git at build time</span></h2>
+      <div class="tscroll"><table>
+        <thead><tr><th>When</th><th>Change</th><th>Commit</th><th class="r">Files</th></tr></thead>
+        <tbody>
+        {% for c in build.commits %}
+          <tr>
+            <td class="fig sub" style="white-space:nowrap">{{ c.date[:10] }}</td>
+            <td>{{ c.subject }}<span class="sub"> — {{ c.author }}</span></td>
+            <td class="sub fig">{{ c.short }}</td>
+            <td class="r sub" style="white-space:nowrap">{{ c.stat or '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% if not build.commits %}<p class="muted">No commits recorded in this build.</p>{% endif %}
+    {% endif %}
+  </div>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Admin · Argent Ridge{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Admin console</h1>
+  <p class="muted">{{ build.short or 'unknown build' }} on {{ build.branch or '—' }} ·
+    {{ commits }} commit{{ '' if commits == 1 else 's' }} logged</p>
+</div>
+
+<div class="cols">
+  <div class="card">
+    <h2><a href="/admin/health" style="text-decoration:none">System health &rarr;</a></h2>
+    <p class="muted">Servers, database, dependencies and what it all costs.</p>
+    <p><span class="chip {{ 'call' if level=='green' else ('wait' if level=='amber' else 'put') }}">
+      {{ 'all good' if level=='green' else ('degraded' if level=='amber' else 'problem') }}</span>
+      <span class="faint">· {{ cost }}/mo</span></p>
+  </div>
+  <div class="card">
+    <h2><a href="/admin/docs" style="text-decoration:none">Documentation &rarr;</a></h2>
+    <p class="muted">Every change to the site, logged per commit, plus the repo's own docs.</p>
+    <p class="faint">{{ docs }} document{{ '' if docs == 1 else 's' }} · newest change
+      {{ latest_change or '—' }}</p>
+  </div>
+  <div class="card">
+    <h2><a href="/users" style="text-decoration:none">Users &rarr;</a></h2>
+    <p class="muted">Who can sign in. Accounts are created here; there is no public sign-up.</p>
+    <p class="faint">{{ users }} account{{ '' if users == 1 else 's' }}</p>
+  </div>
+</div>
+{% endblock %}

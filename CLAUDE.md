@@ -187,3 +187,48 @@ transaction sync, when built, therefore covers equities/options, which IS what m
 ### Jinja trap
 `'%,.0f'|format(x)` **raises** — Python %-formatting has no comma flag. Use the
 `money` filter registered in `app/main.py` (`{{ x|money }}`, `{{ x|money(2, true) }}`).
+
+---
+
+## Admin console (2026-09-20)
+
+Avatar (top right) → Settings · Admin console · Sign out. `/admin` is owner-only and holds
+three things; **Users moved under it** (`/users`, still owner-gated).
+
+### System Health — `core/sysheath.py`, `/admin/health`
+Method copied from Lateral Compass (`api/src/systemhealth/*`): fan out to INDEPENDENT,
+FAIL-SOFT sources and merge, so one dead source shows "—" instead of a blank page.
+`tests/test_admin.py` simulates a total GCP outage and asserts the page still renders,
+reports the problem, and marks the cost as NOT live.
+
+⭐ **Differs from LC on cost, deliberately.** LC's `cost.ts` is a hand-maintained table of
+monthly figures. Here the **resource shape is read LIVE** from the Cloud Run Admin API
+(CPU, memory, min/max instances) and only the **unit prices** are a documented constant,
+so the number moves when the infrastructure moves. The page states which half is live.
+
+- ⚠ **Cloud Run v2: the overall Ready condition is `terminalCondition`, NOT an entry in
+  `conditions[]`.** `conditions[]` only holds RoutesReady / ConfigurationsReady; looking
+  there reports a perfectly healthy service as down. Cost me one red herring.
+- ⚠ **Never name a template-facing dict key `items`.** In Jinja, `cost.items` resolves to
+  `dict.items` (the method) and the page dies with `'builtin_function_or_method' object is
+  not iterable`. The key is `cost.lines`. Same trap applies to `keys`, `values`, `get`.
+- The app SA needs `roles/run.viewer` for the live shape.
+
+### Documentation — `core/docs_store.py`, `/admin/docs`
+Also LC's method: documentation is the repo's own markdown, served read-only, so it ships
+in the same image as the code and cannot drift.
+
+- **Change log = every commit**, generated from `git log` by `scripts/gen_build_info.py`
+  into `app/build_info.json`. "Every commit is logged" is therefore structural, not a
+  discipline someone has to remember.
+- ⛔ **It must be generated BEFORE the upload, never in the Dockerfile.** `.gcloudignore`
+  excludes `.git/`, so a `RUN` step inside the image would silently write
+  `available:false` and wipe a good log. CI does it (`Bake the change log from git`), and
+  `scripts/deploy.sh` does it for manual deploys.
+- `app/build_info.json` is gitignored — it is a build artifact.
+- Markdown is rendered by a small escaping renderer; repo text is escaped BEFORE any
+  formatting, so a doc containing HTML cannot inject. Slug lookup is exact and confined to
+  the repo — `../../etc/passwd` and friends are covered by tests.
+- ⚠ Finder/iCloud keeps regenerating `Name 2.md` byte-identical duplicates. They are
+  deleted and also **filtered defensively** in `list_docs()`, because deleting alone has
+  not held.

@@ -447,13 +447,52 @@ def do_setup(request: Request, token: str,
     return RedirectResponse("/login", status_code=303)
 
 
+# --- admin console (owner only) --------------------------------------------
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_home(request: Request):
+    require_owner(request)
+    from core import auth as _a, docs_store, sysheath
+    h = sysheath.snapshot()
+    b = docs_store.build_info()
+    newest = b["commits"][0]["date"][:10] if b.get("commits") else None
+    return templates.TemplateResponse(request, "admin.html", _ctx(request, **{
+        "page": "admin", "tape": _tape(), "build": b,
+        "commits": len(b.get("commits", [])), "level": h["level"],
+        "cost": "$%.2f" % h["cost"]["monthly"],
+        "docs": len(docs_store.list_docs()), "users": _a.user_count(),
+        "latest_change": newest,
+    }))
+
+
+@app.get("/admin/health", response_class=HTMLResponse)
+def admin_health(request: Request, force: int = 0):
+    require_owner(request)
+    from core import sysheath
+    return templates.TemplateResponse(request, "health.html", _ctx(request, **{
+        "h": sysheath.snapshot(force=bool(force)), "page": "admin", "tape": _tape(),
+    }))
+
+
+@app.get("/admin/docs", response_class=HTMLResponse)
+def admin_docs(request: Request, doc: str = ""):
+    require_owner(request)
+    from core import docs_store
+    d = docs_store.get_doc(doc) if doc else None
+    return templates.TemplateResponse(request, "docs.html", _ctx(request, **{
+        "docs": docs_store.list_docs(), "doc": d,
+        "rendered": docs_store.render_markdown(d["markdown"]) if d else "",
+        "build": docs_store.build_info(), "page": "admin", "tape": _tape(),
+    }))
+
+
 # --- user administration (owner only; there is NO sign-up route) ------------
 
 @app.get("/users", response_class=HTMLResponse)
 def users_page(request: Request, created: str = "", link: str = ""):
     me = require_owner(request)
     return templates.TemplateResponse(request, "users.html", _ctx(request, **{
-        "me": me, "users": auth.list_users(), "page": "settings",
+        "me": me, "users": auth.list_users(), "page": "admin",
         "tape": _tape(), "created": created, "link": link,
         "csrf": auth.csrf_for(request.cookies.get(auth.SESSION_COOKIE)),
     }))
