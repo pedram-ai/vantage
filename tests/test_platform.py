@@ -272,6 +272,7 @@ def main() -> int:
     test_research_refresh_never_destroys_a_read()
     test_research_reads_are_off_the_request_path()
     test_research_paywall_threshold_is_measured()
+    test_paste_upgrades_a_teaser_in_place()
     print()
     if FAILS:
         print(f"FAILED ({len(FAILS)}): " + ", ".join(FAILS))
@@ -429,6 +430,62 @@ def test_research_paywall_threshold_is_measured() -> None:
     # Measured 2026-09-20: full posts 2,843–13,378 chars; teasers ~186–210.
     check("threshold sits between teaser and post",
           210 < R.PAYWALL_CHARS < 2843, f"{R.PAYWALL_CHARS} chars")
+
+
+
+# --- 18. pasting a paid post ------------------------------------------------
+
+def test_paste_upgrades_a_teaser_in_place() -> None:
+    print("\n18. pasting the full text replaces a teaser, in place")
+    from core import research as R
+    from core.store import db
+
+    url = "https://example.invalid/p/paste-guard-test"
+    aid = R.add_manual("t", "x" * 300, url)["id"]
+    try:
+        # a teaser held first, then the full text pasted against the same URL
+        db().collection(R.ARTICLES).document(aid).set(
+            {"id": aid, "title": "Held", "url": url, "body": "teaser " * 30,
+             "chars": 210, "paywalled": True, "source": "s",
+             "source_label": "S", "published_at": "2026-01-01T00:00:00+00:00",
+             "read": {"gist": "an earlier read"}})
+        R._bust("articles")
+
+        res = R.add_manual("Held", "full text. " * 300, url)
+        a = R.get_article(aid)
+        check("same id — it is the same row", res["id"] == aid)
+        check("teaser flag cleared", a["paywalled"] is False)
+        check("body replaced", a["chars"] > 2000, f"{a['chars']} chars")
+        check("published date preserved", a["published_at"].startswith("2026-01-01"))
+        # ⛔ merge=True: a paste must not silently delete work already done
+        check("an existing read survives", bool(a.get("read")))
+
+        # ⛔ MUTATION PROOF: without the length guard a mis-paste destroys text.
+        try:
+            R.add_manual("Held", "oops " * 50, url)
+            check("(proof) a SHORTER paste is refused", False, "it was accepted")
+        except ValueError as e:
+            check("(proof) a shorter paste is refused", "longer version" in str(e))
+        check("and the long body is still there",
+              R.get_article(aid)["chars"] > 2000)
+
+        for bad, why in ((("", "x" * 300), "no title"),
+                         (("t", "short"), "too little text")):
+            try:
+                R.add_manual(bad[0], bad[1], "https://example.invalid/p/other")
+                check(f"({why}) refused", False, "accepted")
+            except ValueError:
+                check(f"({why}) refused", True)
+    finally:
+        db().collection(R.ARTICLES).document(aid).delete()
+        db().collection(R.ARTICLES).document(
+            hashlib_sha("https://example.invalid/p/other")).delete()
+        R._bust("articles")
+
+
+def hashlib_sha(u: str) -> str:
+    import hashlib
+    return hashlib.sha256(u.encode()).hexdigest()[:24]
 
 if __name__ == "__main__":
     sys.exit(main())

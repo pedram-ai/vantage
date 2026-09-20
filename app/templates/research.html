@@ -5,6 +5,7 @@
   ("tweets",   "Tweets",   "Not connected yet"),
   ("news",     "News",     "Not connected yet"),
   ("charts",   "Charts",   "Structure for the symbols you track"),
+  ("paste",    "Paste in", "For paid posts that cannot be fetched"),
   ("sources",  "Sources",  "Which feeds are pulled"),
 ] %}
 {% block content %}
@@ -54,6 +55,11 @@ would produce a confident read of an advertisement, so they are left alone.">{{ 
       </form>
       {% endif %}
     </div>
+
+    {% if pasted %}
+    <div class="banner">Article {{ pasted }}{% if was %} — replaced a {{ was }}-character
+      teaser with {{ now }} characters{% endif %}. Reading it now.</div>
+    {% endif %}
 
     {% if job.running %}
     <div class="banner" id="jobbar">Reading {{ job.done }} of {{ job.total }}…
@@ -171,6 +177,53 @@ would produce a confident read of an advertisement, so they are left alone.">{{ 
       <p class="faint">Candlesticks with prior POC, VAH and VAL live on the symbol pages.
         A research-specific chart view is not built yet — this links to what exists rather
         than showing an empty frame.</p>
+    </div>
+
+  {# ------------------------------------------------------------------- PASTE #}
+  {% elif tab == 'paste' %}
+    {% if err %}<div class="banner warn">{{ err }}</div>{% endif %}
+    <div class="card">
+      <h1>Paste a post in</h1>
+      <p class="muted">For the paid posts. Substack has no API and the browser extension is
+        blocked from the domain, so the full text of a subscriber-only post cannot be fetched
+        — but pasting it takes one copy.</p>
+      <p class="faint">⭐ Paste the <b>Substack URL</b> of a post already listed as a teaser and
+        this replaces the teaser <b>in place</b> — same row, same date, now readable and
+        readable by the model. It never overwrites a longer version with a shorter one.</p>
+
+      <form method="post" action="/research/paste" style="margin-top:16px">
+        <label class="fld"><span>Substack URL <span class="faint">— what links this to the
+          teaser already held</span></span>
+          <input name="url" placeholder="https://tictoctrading.substack.com/p/daily-plan-9326"
+                 style="max-width:520px"></label>
+        <label class="fld"><span>Title</span>
+          <input name="title" required style="max-width:520px"></label>
+        <label class="fld"><span>Publication <span class="faint">— optional</span></span>
+          <input name="source_label" placeholder="Tic Toc · OrderFlow" style="max-width:320px"></label>
+        <label class="fld"><span>Full text</span>
+          <textarea name="body" rows="14" required
+                    style="width:100%;max-width:820px;font-size:13px;line-height:1.55"
+                    placeholder="Select the whole post in your browser and paste it here."></textarea></label>
+        <button class="btn" type="submit">Save and read it</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Still behind the paywall <span class="faint">{{ counts.paywalled }} posts</span></h2>
+      <p class="muted">Each of these is held as a teaser of about 213 characters. Open one,
+        copy the text, paste it above.</p>
+      <div class="tscroll"><table>
+        <thead><tr><th>Post</th><th>Held</th><th></th></tr></thead>
+        <tbody>
+        {% for a in paywalled %}
+        <tr>
+          <td>{{ a.title }}<span class="sub"> — {{ a.published_at|pt_date }}</span></td>
+          <td class="sub">{{ a.chars }} ch</td>
+          <td class="r"><a href="{{ a.url }}" target="_blank" rel="noopener">open &#8599;</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
     </div>
 
   {# ----------------------------------------------------------------- SOURCES #}

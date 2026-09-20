@@ -186,6 +186,58 @@ def refresh(limit_per_source: int = 20) -> dict:
     return {"added": added, "already_had": kept, "at": now_iso()}
 
 
+def add_manual(title: str, body: str, url: str = "", source_label: str = "") -> dict:
+    """Save an article pasted in by hand, or UPGRADE a teaser already held.
+
+    ⭐ THIS IS THE PAYWALL ANSWER. Substack has no API and the browser
+    extension is blocked from the domain at policy level, so the full text of a
+    paid post cannot be fetched automatically. Pasting it in takes one
+    copy — and because the id is the hash of the URL, pasting the full text of
+    a post we already hold as a 213-character teaser REPLACES the teaser in
+    place: same row, same position in the feed, now readable.
+
+    ⛔ It never overwrites a LONGER body with a shorter one. A mis-paste (an
+    empty clipboard, a partial selection) must not destroy text already held.
+    """
+    title = (title or "").strip()
+    body = (body or "").strip()
+    if not title:
+        raise ValueError("A title is required.")
+    if len(body) < 200:
+        raise ValueError("That is too short to be a post — paste the full text.")
+
+    url = (url or "").strip()
+    aid = (hashlib.sha256(url.encode()).hexdigest()[:24] if url
+           else hashlib.sha256(f"manual:{title}".encode()).hexdigest()[:24])
+
+    existing = get_article(aid) or {}
+    if len(existing.get("body") or "") > len(body):
+        raise ValueError(
+            f"We already hold a longer version of this ({len(existing['body'])} "
+            f"chars vs {len(body)} pasted). Nothing was changed.")
+
+    patch = {
+        "id": aid,
+        "source": existing.get("source") or "pasted",
+        "source_label": (source_label.strip() or existing.get("source_label")
+                         or "Pasted in"),
+        "title": existing.get("title") or title,
+        "url": url or existing.get("url", ""),
+        "published_at": existing.get("published_at") or now_iso(),
+        "body": body,
+        "chars": len(body),
+        "paywalled": False,
+        "pasted": True,
+        "fetched_at": now_iso(),
+    }
+    # ⛔ merge=True: an existing row keeps its `read` until a new one replaces
+    # it, so a paste is never a silent deletion of work already done.
+    db().collection(ARTICLES).document(aid).set(patch, merge=True)
+    _bust("articles")
+    return {"id": aid, "upgraded": bool(existing),
+            "was": len(existing.get("body") or ""), "now": len(body)}
+
+
 # --- reading ----------------------------------------------------------------
 
 PREVIEW_CHARS = 1400

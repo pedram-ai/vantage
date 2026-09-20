@@ -90,7 +90,29 @@ that every call returned 403.
 > text. Rendering all 40 bodies made it a **218 KB** document to show twelve headlines; it is
 > **51 KB** now, and nothing is hidden — the full text is one click.
 
-## 8. Tweets, News, Charts
+## 8. ⛔ The paid posts cannot be fetched — they are pasted
+
+Substack has no API for subscriber content, and **the browser extension is blocked from
+`substack.com` at policy level** — navigation is refused before the page loads, so driving a
+logged-in browser is not available either. Tried 2026-09-20.
+
+The **Paste in** tab is the route. Paste a post's Substack URL plus its full text and it is
+saved; because the article id is the SHA-256 of the URL, pasting against a post already held as
+a 213-character teaser **replaces the teaser in place** — same row, same date, now readable.
+
+> **Invariant:** a paste never overwrites a LONGER body with a shorter one. An empty clipboard
+> or a partial selection must not destroy text already held; the attempt is refused and says by
+> how much.
+
+> **Invariant:** the write is `merge=True`, so an existing read survives the paste until a new
+> one replaces it. A paste is never a silent deletion of work already done.
+
+⚠ The two untried alternatives, neither started: a Substack **session cookie** stored server-side
+(a bearer credential equal to the account login — Pedram's call, not a default), or **ingesting
+the subscriber emails**, which carry the full post. Lateral Compass already has a Gmail-ingest
+implementation that pattern could copy.
+
+## 9. Tweets, News, Charts
 
 Not connected. They render an explicit empty state.
 

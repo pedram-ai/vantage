@@ -268,7 +268,8 @@ def api_symbols(request: Request, q: str = ""):
 
 @app.get("/research", response_class=HTMLResponse)
 def research_page(request: Request, tab: str = "articles", source: str = "",
-                  page: int = 1):
+                  page: int = 1, err: str = "", pasted: str = "",
+                  was: int = 0, now: int = 0):
     check_user(request)
     from core import llm, research
     research.seed_sources()
@@ -278,7 +279,10 @@ def research_page(request: Request, tab: str = "articles", source: str = "",
         "page": "research", "tape": _tape(), "tab": tab,
         "articles": feed["rows"], "feed": feed, "sources": research.all_sources(),
         "source": source, "counts": research.counts(),
-        "job": research.job_status(),
+        "paywalled": ([a for a in research._list_all() if a.get("paywalled")]
+                      if tab == "paste" else []),
+        "job": research.job_status(), "err": err, "pasted": pasted,
+        "was": was, "now": now,
         "llm": llm.status(),
     }))
 
@@ -318,6 +322,25 @@ def research_job(request: Request):
     check_user(request)
     from core import research
     return research.job_status()
+
+
+@app.post("/research/paste")
+def research_paste(request: Request, title: str = Form(""), body: str = Form(""),
+                   url: str = Form(""), source_label: str = Form("")):
+    """Save a pasted post. Substack's paid text cannot be fetched, so this is
+    the route for it — and it upgrades a teaser we already hold in place."""
+    check_user(request)
+    from core import research
+    try:
+        res = research.add_manual(title, body, url, source_label)
+    except ValueError as e:
+        return RedirectResponse(f"/research?tab=paste&err={quote_plus(str(e))}",
+                                status_code=303)
+    # Read it straight away — one article is ~18 s, in the background.
+    research.start_summarise(1)
+    verb = "upgraded" if res["upgraded"] else "saved"
+    return RedirectResponse(
+        f"/research?pasted={verb}&was={res['was']}&now={res['now']}", status_code=303)
 
 
 @app.post("/research/sources")
