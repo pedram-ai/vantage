@@ -106,7 +106,7 @@ def build_payload(perf: dict) -> dict:
     """The ONLY thing the model sees. Aggregates, never raw trades."""
     acct = perf.get("account") or {}
     by_month: dict[str, float] = {}
-    for t in perf.get("trades") or []:
+    for t in perf.get("all_trades") or perf.get("trades") or []:
         d = t.get("closed_on")
         if d:
             by_month[d[:7]] = round(by_month.get(d[:7], 0.0) + float(t.get("pnl", 0) or 0), 2)

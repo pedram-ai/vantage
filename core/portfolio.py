@@ -14,21 +14,68 @@ Collections:
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import datetime, timedelta
 
 from .profile import ET, PT
 from .store import db, now_iso
 
 
+# --- the read cache ---------------------------------------------------------
+# ⚠ WHY THIS EXISTS: every period click (today / this week / last quarter / …)
+# used to re-stream the WHOLE `trades` and `cash` collections out of Firestore
+# and recompute, so switching periods cost a full round trip per click on a
+# collection that only changes when an import runs.
+#
+# This is NOT BigQuery and does not want a second database. The corporate
+# account is 771 trades and 19 cash rows — it fits in memory with room to
+# spare, so the collections are read once and filtered in process.
+#
+# ⛔ CORRECTNESS OVER SPEED: the cache is INVALIDATED BY THE IMPORTER, not
+# merely aged out. A stale P&L figure is the exact failure this codebase
+# refuses to ship, so `invalidate()` is called at the end of every import and
+# the TTL is only a backstop for a writer we forgot about.
+_TTL = 600.0
+_LOCK = threading.Lock()
+_CACHE: dict[str, tuple[float, list]] = {}
+
+
+def invalidate() -> None:
+    """Drop every cached collection. Called after any write."""
+    with _LOCK:
+        _CACHE.clear()
+
+
+def _all(name: str) -> list[dict]:
+    """Whole collection, cached. Returns a COPY so callers cannot mutate it."""
+    now = time.monotonic()
+    with _LOCK:
+        hit = _CACHE.get(name)
+        if hit and now - hit[0] < _TTL:
+            return [dict(r) for r in hit[1]]
+    rows = []
+    for doc in db().collection(name).stream():
+        d = doc.to_dict()
+        d["id"] = doc.id
+        rows.append(d)
+    with _LOCK:
+        _CACHE[name] = (now, rows)
+    return [dict(r) for r in rows]
+
+
+def cache_state() -> dict:
+    """For System Health — what is warm, and how old."""
+    now = time.monotonic()
+    with _LOCK:
+        return {k: {"rows": len(v[1]), "age_sec": round(now - v[0], 1)}
+                for k, v in _CACHE.items()}
+
+
 # --- reads ------------------------------------------------------------------
 
 def open_positions() -> list[dict]:
-    out = []
-    for doc in db().collection("positions").stream():
-        d = doc.to_dict()
-        d["id"] = doc.id
-        out.append(d)
-    return sorted(out, key=lambda r: r.get("opened_at", ""), reverse=True)
+    return sorted(_all("positions"), key=lambda r: r.get("opened_at", ""), reverse=True)
 
 
 def held_symbols() -> list[str]:
@@ -42,41 +89,32 @@ def held_symbols() -> list[str]:
 
 def traded_symbols_since(date_iso: str) -> list[str]:
     seen: list[str] = []
-    for doc in (db().collection("trades")
-                .where("closed_on", ">=", date_iso).stream()):
-        s = (doc.to_dict().get("symbol") or "").upper()
+    for t in _all("trades"):
+        if (t.get("closed_on") or "") < date_iso:
+            continue
+        s = (t.get("symbol") or "").upper()
         if s and s not in seen:
             seen.append(s)
     return seen
 
 
 def trades_between(start_iso: str, end_iso: str) -> list[dict]:
-    out = []
-    for doc in (db().collection("trades")
-                .where("closed_on", ">=", start_iso)
-                .where("closed_on", "<=", end_iso).stream()):
-        d = doc.to_dict()
-        d["id"] = doc.id
-        out.append(d)
+    # ⚠ The bounds are INCLUSIVE at both ends, matching the Firestore
+    # >= / <= query this replaced. `closed_on` is a YYYY-MM-DD string, so
+    # string comparison is date comparison — but only while that holds: a
+    # datetime or a differently-formatted date would compare wrong and
+    # silently return the wrong period rather than failing.
+    out = [t for t in _all("trades")
+           if start_iso <= (t.get("closed_on") or "") <= end_iso]
     return sorted(out, key=lambda r: r.get("closed_on", ""), reverse=True)
 
 
 def cash_flows() -> list[dict]:
-    out = []
-    for doc in db().collection("cash").stream():
-        d = doc.to_dict()
-        d["id"] = doc.id
-        out.append(d)
-    return sorted(out, key=lambda r: r.get("date", ""), reverse=True)
+    return sorted(_all("cash"), key=lambda r: r.get("date", ""), reverse=True)
 
 
 def import_coverage() -> list[dict]:
-    out = []
-    for doc in db().collection("import_runs").stream():
-        d = doc.to_dict()
-        d["id"] = doc.id
-        out.append(d)
-    return sorted(out, key=lambda r: r.get("start", ""))
+    return sorted(_all("import_runs"), key=lambda r: r.get("start", ""))
 
 
 def latest_import() -> dict | None:
@@ -117,8 +155,8 @@ def account_state() -> dict:
 
 def is_connected() -> dict:
     """What the portfolio pages can honestly show today."""
-    has_trades = any(True for _ in db().collection("trades").limit(1).stream())
-    has_pos = any(True for _ in db().collection("positions").limit(1).stream())
+    has_trades = bool(_all("trades"))
+    has_pos = bool(_all("positions"))
     imports = import_coverage()
     return {
         "has_trades": has_trades,
@@ -194,7 +232,7 @@ def period_range(key: str, today=None) -> tuple[str, str, str]:
 
 # --- P&L --------------------------------------------------------------------
 
-def performance(period: str = "month") -> dict:
+def performance(period: str = "month", page: int = 1, per_page: int = 50) -> dict:
     """Realized P&L for a period, plus open P&L.
 
     ⛔ Deposits and withdrawals are NEVER counted as profit. A $25k transfer
@@ -248,6 +286,11 @@ def performance(period: str = "month") -> dict:
         "avg_loss": (sum(float(t["pnl"]) for t in losses) / len(losses)) if losses else None,
         "by_symbol": finish(by_symbol),
         "by_zone": finish(by_zone),
-        "trades": trades,
+        "trades": trades[(max(page, 1) - 1) * per_page: max(page, 1) * per_page],
+        "all_trades": trades,
+        "page": max(page, 1),
+        "per_page": per_page,
+        "pages": max(1, (len(trades) + per_page - 1) // per_page),
+        "total_trades": len(trades),
         "empty": not trades and not positions,
     }

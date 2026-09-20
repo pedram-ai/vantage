@@ -180,13 +180,30 @@ def _bar_path(x, y, w, h, r, up) -> str:
 # --- 3. contribution by category --------------------------------------------
 
 def category_bars(rows: list[dict], label_key: str = "key",
-                  w: int = 400, h: int | None = None) -> str:
-    """Horizontal diverging bars — magnitude by category, signed."""
-    rows = [r for r in rows if r.get("pnl") is not None][:8]
+                  w: int = 400, h: int | None = None, cap: int = 14) -> str:
+    """Horizontal diverging bars — magnitude by category, signed.
+
+    ⛔ RANKED BY ABSOLUTE VALUE, NOT BY SIGNED P&L. The rows arrive sorted
+    descending by pnl, so slicing the head kept the WINNERS and silently
+    dropped the biggest losers: on the real book that hid QQQ -$240,600 and
+    SQQQ -$298,641 while showing +$38k and +$31k, and the chart flatly
+    contradicted the total beside it.
+
+    If anything is still cut, the total of what was cut is DRAWN ON THE CHART.
+    A truncated chart must never look complete.
+    """
+    rows = [r for r in rows if r.get("pnl") is not None]
     if not rows:
         return _empty("Nothing to compare yet.")
+    rows = sorted(rows, key=lambda r: -abs(float(r["pnl"])))
+    hidden = rows[cap:]
+    rows = rows[:cap]
+    hidden_total = sum(float(r["pnl"]) for r in hidden)
+    # draw biggest-positive at the top, biggest-negative at the bottom
+    rows = sorted(rows, key=lambda r: -float(r["pnl"]))
     rowh = 30
-    h = h or (len(rows) * rowh + 16)
+    foot = 22 if hidden else 0
+    h = h or (len(rows) * rowh + 16 + foot)
     labw, valw = 96, 62
     iw = w - labw - valw
     m = max(abs(float(r["pnl"])) for r in rows) or 1.0
@@ -208,6 +225,12 @@ def category_bars(rows: list[dict], label_key: str = "key",
                    f'text-anchor="end">{_esc(r[label_key])}</text>')
         out.append(f'<text x="{w-6}" y="{y+12.5:.1f}" font-size="11" fill="{c}" '
                    f'text-anchor="end" font-weight="600">{_money(v)}</text>')
+    if hidden:
+        out.append(f'<text x="{labw-8}" y="{h-6}" font-size="10.5" fill="{INK}" '
+                   f'text-anchor="end">{len(hidden)} smaller</text>')
+        out.append(f'<text x="{w-6}" y="{h-6}" font-size="10.5" '
+                   f'fill="{UP if hidden_total >= 0 else DOWN}" text-anchor="end">'
+                   f'{_money(hidden_total)}</text>')
     return (f'<svg viewBox="0 0 {w} {h}" width="100%" style="max-width:{w}px" role="img" '
             f'aria-label="Profit and loss by category">{"".join(out)}</svg>')
 

@@ -29,6 +29,30 @@ ALLOWED = {e.strip().lower() for e in
 app = FastAPI(title="Argent Ridge")
 
 
+@app.on_event("startup")
+def _warm_cache() -> None:
+    """Prime the portfolio read cache off the request path.
+
+    ⚠ With min-instances=1 the container outlives requests, so the FIRST page
+    load would otherwise pay the whole Firestore read (~3.5 s measured on 771
+    trades) while every later one is ~2 ms. Warming here moves that cost to
+    deploy time, where nobody is waiting.
+
+    Fail-soft on purpose: if Firestore is unreachable at boot the app must
+    still start and render its "not connected" state, not crash-loop.
+    """
+    import threading
+
+    def go():
+        try:
+            from core import portfolio
+            portfolio.performance("all")
+        except Exception:  # noqa: BLE001
+            pass
+
+    threading.Thread(target=go, daemon=True).start()
+
+
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.globals["GLOSSARY"] = GLOSSARY
@@ -280,11 +304,13 @@ def cash_page(request: Request):
 
 
 @app.get("/performance", response_class=HTMLResponse)
-def performance_page(request: Request, period: str = "month", ai: int = 1):
+def performance_page(request: Request, period: str = "month", ai: int = 1, page: int = 1):
     check_user(request)
     from core import perf_charts
-    perf = portfolio.performance(period)
-    trades = perf.get("trades") or []
+    perf = portfolio.performance(period, page=page)
+    # ⚠ Charts must use the FULL period, never the current page — paginating
+    # the table must not silently reshape the charts beside it.
+    trades = perf.get("all_trades") or []
     from core import ai_insights
     charts = {
         "equity": perf_charts.equity_curve(trades),

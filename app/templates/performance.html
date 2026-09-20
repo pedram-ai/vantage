@@ -148,8 +148,19 @@
     </table></div>
   </div>
   <div class="card">
-    <h2>By setup <span class="faint">which zone it was taken on</span></h2>
+    <h2>By setup <span class="faint">which action-map zone the trade was taken on</span></h2>
+    {% set unmapped = perf.by_zone|length == 1 and perf.by_zone[0].key == 'Outside the map' %}
+    {% if unmapped %}
+    <p class="muted" style="font-size:13px">Every imported trade reads
+      <b>Outside the map</b> — not because you traded badly, but because Argent Ridge
+      did not exist when these were placed, so there is no record of which zone was
+      live at the time.</p>
+    <p class="faint">This fills in going forward: trades taken while the app is
+      running get tagged with the zone that was active, and this table then answers
+      "which of my setups actually pay?" &mdash; the one question a broker cannot.</p>
+    {% else %}
     {{ charts.by_zone|safe }}
+    {% endif %}
     <div class="tscroll"><table>
       <thead><tr><th>Zone</th><th class="r">Trades</th><th class="r">Win rate</th><th class="r">Net</th></tr></thead>
       <tbody>{% for r in perf.by_zone %}
@@ -162,7 +173,7 @@
 </div>
 
 <div class="card">
-  <h2>Trades</h2>
+  <h2>Trades <span class="faint">{{ perf.total_trades }} closed in {{ perf.label }}</span></h2>
   <div class="tscroll"><table>
     <thead><tr><th>Closed</th><th>Position</th><th>Zone</th><th class="r">Qty</th>
       <th class="r">P&amp;L</th></tr></thead>
@@ -175,6 +186,28 @@
         <td class="r fig {{ 'up' if t.pnl > 0 else 'down' }}">{{ t.pnl|money(0, true) }}</td></tr>
     {% endfor %}</tbody>
   </table></div>
+  {% if perf.pages > 1 %}
+  <div class="pills" style="margin:14px 0 0">
+    <span class="plab">Page</span>
+    {% if perf.page > 1 %}
+    <a class="pill" href="?period={{ perf.period }}&amp;page={{ perf.page - 1 }}">&larr; Prev</a>
+    {% endif %}
+    {% for n in range(1, perf.pages + 1) %}
+      {% if n <= 2 or n > perf.pages - 2 or (n >= perf.page - 1 and n <= perf.page + 1) %}
+      <a class="pill {{ 'on' if n == perf.page }}"
+         href="?period={{ perf.period }}&amp;page={{ n }}">{{ n }}</a>
+      {% elif n == 3 and perf.page > 4 %}<span class="faint">…</span>
+      {% elif n == perf.pages - 2 and perf.page < perf.pages - 3 %}<span class="faint">…</span>
+      {% endif %}
+    {% endfor %}
+    {% if perf.page < perf.pages %}
+    <a class="pill" href="?period={{ perf.period }}&amp;page={{ perf.page + 1 }}">Next &rarr;</a>
+    {% endif %}
+    <span class="faint" style="margin-left:8px">
+      showing {{ (perf.page - 1) * perf.per_page + 1 }}&ndash;{{ [perf.page * perf.per_page, perf.total_trades]|min }}
+      of {{ perf.total_trades }}</span>
+  </div>
+  {% endif %}
 </div>
 {% endif %}
 

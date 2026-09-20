@@ -98,6 +98,12 @@ def run(path: str, account: str = "corporate", dry: bool = False) -> dict:
     store.db().collection("import_runs").document(
         f"{account}|{s['source_file']}").set(summary)
 
+    # ⛔ The read cache in core.portfolio must be dropped the instant the data
+    # moves. A cached P&L that survives an import is a wrong number on a money
+    # screen, which is worse than a slow one.
+    from core import portfolio
+    portfolio.invalidate()
+
     return {"transactions": n_tx, "trades": n_tr, "cash": n_ca,
             "positions": n_po, **summary}
 
