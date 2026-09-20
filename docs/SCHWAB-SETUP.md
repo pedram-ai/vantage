@@ -14,19 +14,58 @@ so your full trading history still needs the CSV export (see the end of this doc
 
 ---
 
-## Part 1 — Register the app (you do this once; ~10 min, then a wait)
+## ⛔ Part 0 — PRODUCT ACCESS COMES FIRST (and it is its own approval)
+
+**Corrected 2026-09-19.** This doc originally started at "Create App". That was wrong, and
+Pedram hit the real wall: **you cannot create an app until Schwab has approved your access to
+the API product.** There are TWO separate approvals, days apart:
+
+```
+  1. Subscription:  request access to "Trader API - Individual"   <- Schwab approves
+  2. App:           create an app under that product              <- Schwab approves again
+```
+
+**Where to look:** Dashboard -> **Subscriptions** tab shows the request and its Access status.
+API Products -> *Trader API - Individual* shows the same status in the top right.
+
+**Trader API - Individual** is the individual-developer line of business; it bundles **both**
+Market Data Production and Accounts and Trading Production. One request covers both — which is
+why Part 1 step 2 below has nothing left to choose if this is still pending.
+
+### How to tell you are blocked here
+
+| What you see | Meaning |
+|---|---|
+| Subscriptions: **Pending** | waiting on Schwab; nothing to click |
+| API Products: buttons greyed, **"Pending - Request Access"** | same — the request is already in, do not re-request |
+| Create App: **"You do not have access to any Active API products"**, empty dropdown | the symptom of the above, not a separate problem |
+| Apps Pending Approval: empty | expected — no app can exist yet |
+
+⚠ **Do not re-submit the request.** A duplicate does not jump the queue and may reset it.
+
+### How long
+
+⚠ **The "1–3 business days" figure below applies to the APP approval, not this one.**
+Community reports put the *product access* step anywhere from a few days to **about a month**.
+
+**If it has been sitting more than ~a week, email `traderapi@schwab.com`** — that is the
+official Trader API support channel. Include your account name and that *Trader API -
+Individual* is showing Pending in Subscriptions. There is no self-service escalation.
+
+---
+
+## Part 1 — Register the app (only once Part 0 says approved; ~10 min, then another wait)
 
 ### 1. Create the app
 
-Go to **https://developer.schwab.com** → sign in with your Schwab credentials →
-**Dashboard → Apps → Create App**.
+Go to **https://developer.schwab.com** -> sign in with your Schwab credentials ->
+**Dashboard -> Apps -> Create App**.
 
-### 2. Select BOTH API products
+### 2. Select the API product
 
-- ✅ **Market Data Production** — quotes. This is the real-time price feed.
-- ✅ **Accounts and Trading Production** — positions and transactions.
-
-Select both. Vantage uses both, and adding a product later means another approval wait.
+Pick **Trader API - Individual** (it bundles Market Data Production *and* Accounts and Trading
+Production). If the dropdown is empty, you are still in Part 0 — nothing here is
+misconfigured.
 
 ### 3. Callback URL — this must be EXACT
 
@@ -52,7 +91,8 @@ this during review.
 
 ### 6. Wait for approval — and watch the status word
 
-Approval is manual and takes **1–3 business days**.
+Approval is manual and takes **1–3 business days** — this is the *app* approval, and it is
+the second of the two waits (see Part 0).
 
 | Status | Means |
 |---|---|
@@ -127,6 +167,7 @@ without your account — worth checking before we invest in the sync half.
 
 | Symptom | Cause |
 |---|---|
+| "You do not have access to any Active API products" | Part 0 — the product subscription is still Pending. Not an app problem |
 | Login redirects to an error page | Callback URL mismatch — re-copy it exactly from Part 1 step 3 |
 | `invalid_client` | App still `Approved - Pending`, or the key/secret was pasted with whitespace |
 | Connected, but prices still say Yahoo | Token expired — Reconnect (Part 3) |
