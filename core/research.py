@@ -1101,3 +1101,47 @@ def _people_uncached(days: int = 90, horizon: str = "") -> list[dict]:
     out.sort(key=lambda r: (r["votes"] == 0, -r["votes"], -r["articles"],
                             r["label"].lower()))
     return out
+
+
+# --- X accounts -------------------------------------------------------------
+# ⛔ NOT FETCHABLE TODAY. Every free route is closed (see core/consensus._x and
+# docs/system/15). These are registered so the roster is real and reviewable
+# now, and so connecting the API is a config change rather than a build.
+#
+# ⚠ Handles are the ones each person/firm posts from. An unverified guess here
+# would put someone else's tweets under a name you trust, which is the same
+# failure as the five squatted Substack handles this project already refused.
+X_ACCOUNTS = [
+    {"name": "Ray Dalio",        "handle": "RayDalio",        "kind": "person"},
+    {"name": "Tom Lee",          "handle": "fundstrat",       "kind": "firm"},
+    {"name": "Jeremy Siegel",    "handle": "WisdomTreeETFs",  "kind": "firm"},
+    {"name": "Jeffrey Gundlach", "handle": "TruthGundlach",   "kind": "person"},
+    {"name": "Jim Bianco",       "handle": "biancoresearch",  "kind": "person"},
+    {"name": "Nouriel Roubini",  "handle": "Nouriel",         "kind": "person"},
+    {"name": "Larry Summers",    "handle": "LHSummers",       "kind": "person"},
+    {"name": "Ken Fisher",       "handle": "KennethLFisher",  "kind": "person"},
+    {"name": "Aswath Damodaran", "handle": "AswathDamodaran", "kind": "person"},
+    {"name": "BCA Research",     "handle": "BCAResearch",     "kind": "firm"},
+    {"name": "Michael Gayed",    "handle": "leadlagreport",   "kind": "person"},
+    {"name": "Katie Stockton",   "handle": "StocktonKatie",   "kind": "person"},
+    {"name": "Michael Hartnett", "handle": None,
+     "note": "posts through BofA research, no personal account"},
+    {"name": "Jeremy Grantham",  "handle": None,
+     "note": "GMO publishes letters, he does not post"},
+    {"name": "Barry Bannister",  "handle": None,
+     "note": "Stifel notes only"},
+    {"name": "Paul Tudor Jones", "handle": None,
+     "note": "no active account; appears via interviews"},
+]
+
+
+def x_roster() -> dict:
+    """Who we would follow, and the honest state of the connection."""
+    from . import consensus
+    have = [a for a in X_ACCOUNTS if a.get("handle")]
+    return {
+        "accounts": X_ACCOUNTS,
+        "with_handle": len(have),
+        "total": len(X_ACCOUNTS),
+        "status": consensus._x(),
+    }

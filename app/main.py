@@ -308,7 +308,52 @@ def healthz():
 # --- Today ------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
-def today(request: Request, list: str = "", refresh: int = 0):
+def today(request: Request, symbol: str = "SPY", horizon: str = "24h",
+          interval: str = "1d", refresh: int = 0):
+    """The whole read on one page: what the inputs say, the chart, the levels.
+
+    ⭐ This replaced a separate Charts tab. The analysis, the price and the
+    levels it rests on were three clicks apart, so nothing could be checked
+    against anything else without navigating.
+    """
+    check_user(request)
+    from core import barstore, consensus, live, memo, quant, research
+    symbol = (symbol or "SPY").upper()
+    if symbol not in CHART_SYMBOLS:
+        symbol = "SPY"
+    yah = CHART_SYMBOLS[symbol]
+    if interval not in barstore.INTERVALS and interval not in barstore.DERIVED:
+        interval = "1d"
+
+    rows, info = barstore.bars_for(yah, interval, 400, auto_sync=False)
+    lv = quant.levels(yah, 10)
+    q = live.get(yah) or {}
+
+    # The 3 newest articles that make a call, for the sidebar.
+    recent = [a for a in research._list_all()[:40]
+              if isinstance(a.get("read"), dict) and a["read"].get("calls")][:3]
+
+    return templates.TemplateResponse(request, "today.html", _ctx(request, **{
+        "page": "today", "tape": _tape(),
+        "symbol": symbol, "symbols": CHART_SYMBOLS, "interval": interval,
+        "intervals": barstore.INTERVALS, "derived": barstore.DERIVED,
+        "signal": consensus.read(yah, horizon), "horizon": horizon,
+        "horizons": research.HORIZONS,
+        "quant": lv, "quote": q,
+        "coverage": barstore.coverage(
+            yah, interval if interval in barstore.INTERVALS
+            else barstore.DERIVED[interval][0]),
+        "series": [[int(b.ts.timestamp()), round(b.open, 4), round(b.high, 4),
+                    round(b.low, 4), round(b.close, 4), int(b.volume or 0)]
+                   for b in rows],
+        "derived_from": info.get("derived_from"),
+        "recent": recent,
+    }))
+
+
+@app.get("/briefing", response_class=HTMLResponse)
+def briefing(request: Request, list: str = "", refresh: int = 0):
+    """The old Today: per-symbol verdicts across a watchlist."""
     check_user(request)
     watchlists.ensure_seed()
     lists = watchlists.all_lists()
@@ -320,7 +365,7 @@ def today(request: Request, list: str = "", refresh: int = 0):
                       lambda: build_today(symbols, fresh=False)))
     batch = (quotes_for(symbols, fresh=True) if refresh
              else quotes_for_snapshot(symbols))
-    return templates.TemplateResponse(request, "today.html", _ctx(request, **{
+    return templates.TemplateResponse(request, "briefing.html", _ctx(request, **{
         "brief": brief, "page": "today", "tape": _tape(),
         "list_id": current.get("id") if current else None,
         "list_name": current.get("name") if current else "no list",
@@ -370,7 +415,7 @@ def api_bars(request: Request, symbol: str = "SPY", interval: str = "1d",
 
 
 @app.get("/charts", response_class=HTMLResponse)
-def charts_page(request: Request, symbol: str = "SPY", interval: str = "1d",
+def charts_page_legacy(request: Request, symbol: str = "SPY", interval: str = "1d",
                 bars: int = 300, horizon: str = "24h"):
     """Candles for SPY and ES across every timeframe, from the local archive."""
     check_user(request)
@@ -475,6 +520,7 @@ def research_page(request: Request, tab: str = "articles", source: str = "",
         "job": research.job_status(), "err": err, "pasted": pasted,
         "was": was, "now": now, "days": days, "spy_now": spy_now,
         "people": (research.people(days or 90, horizon) if tab == "people" else []),
+        "xroster": research.x_roster() if tab == "tweets" else None,
         "horizon": horizon, "horizons": research.HORIZONS,
         "timeline": research.timeline(source=source, days=days) if tab == "articles" else [],
         "outlook": (research.outlook(14, spy_now) if tab == "articles" else None),

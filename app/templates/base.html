@@ -272,7 +272,6 @@ a.card-link:hover .cardgo{font-weight:600;}
 #readout{font-variant-numeric:tabular-nums;min-height:15px;margin:0;font-size:11.5px;}
 .cmas{display:flex;gap:13px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);}
 .cmas label{display:flex;align-items:center;gap:4px;cursor:pointer;}
-#cv{width:100%;display:block;cursor:crosshair;touch-action:none;}
 .chint{display:flex;align-items:center;font-size:10.5px;color:var(--faint);
   padding-top:8px;margin-top:6px;border-top:1px solid var(--line-soft);}
 .chint .gap{flex:1;}
@@ -303,19 +302,77 @@ a.card-link:hover .cardgo{font-weight:600;}
 .hd.here{outline:1.5px solid var(--accent);}
 .pgo{font-size:11.5px;color:var(--accent);text-decoration:none;white-space:nowrap;}
 .pgo:hover{text-decoration:underline;}
+/* ---- Today: one page for the whole read ---- */
+.tbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:13px;}
+.tprice{display:flex;align-items:baseline;gap:8px;}
+.tprice .fig{font-size:23px;font-weight:750;letter-spacing:-.02em;}
+.tprice .chg{font-size:13px;font-weight:650;}
+.tprice .chg.up{color:var(--up);} .tprice .chg.down{color:var(--down);}
+.pill.sm{font-size:11px;padding:3px 9px;}
+.cwrap{padding:13px 15px 10px;}
+.ctop{display:flex;justify-content:space-between;align-items:center;gap:14px;
+  flex-wrap:wrap;margin-bottom:6px;}
+.creadout{min-height:14px;margin:0 0 3px;font-variant-numeric:tabular-nums;font-size:11px;}
+/* ⛔ THE HEIGHT MUST BE IN CSS. The canvas had only a `height` ATTRIBUTE, and
+   draw() sizes the backing store from clientHeight — which was 0 before
+   layout, so the first pass set height=0 and the element could never recover.
+   A blank canvas with no error is the worst version of this bug. */
+#cv{width:100%;height:var(--chart-h,220px);display:block;cursor:crosshair;
+  touch-action:none;}
+@media(max-width:760px){ #cv{height:180px;} }
+.cmas{display:flex;gap:11px;flex-wrap:wrap;font-size:11px;color:var(--muted);}
+.cmas label{display:flex;align-items:center;gap:3px;cursor:pointer;}
+.chint{display:flex;align-items:center;gap:10px;font-size:10px;color:var(--faint);
+  padding-top:6px;}
+.hsize{display:flex;gap:3px;align-items:center;}
+.hsize button{font-size:10px;padding:1px 7px;border-radius:99px;border:1px solid var(--line);
+  background:var(--card);color:var(--muted);cursor:pointer;font-family:inherit;}
+.hsize button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+/* who-said-what, on hover */
+.sigc{position:relative;}
+.sigc .who{position:absolute;left:0;right:0;top:100%;z-index:40;margin-top:5px;
+  background:var(--card);border:1px solid var(--line);border-radius:11px;
+  padding:9px 11px;box-shadow:0 10px 30px rgba(12,22,34,.18);
+  opacity:0;visibility:hidden;transition:opacity .12s;}
+.sigc:hover .who,.sigc:focus-within .who{opacity:1;visibility:visible;}
+.who .wrow{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;
+  padding:2px 0;}
+.who .wrow b{font-weight:600;}
+.who .wb{color:var(--up);} .who .wr{color:var(--down);} .who .wn{color:var(--faint);}
+.who .whead{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:5px;}
+.chint .gap{flex:1;}
+.cols2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;
+  margin-top:16px;}
+.lvlsum{font-size:12.5px;margin:0 0 9px;}
+.lvt{font-size:12px;} .lvt td,.lvt th{padding:3px 0;}
+.arch{margin:9px 0 0;padding-top:8px;border-top:1px solid var(--line);}
+.linkbtn{background:none;border:0;color:var(--accent);cursor:pointer;font:inherit;
+  padding:0;text-decoration:underline;}
+.rcall{display:block;text-decoration:none;color:inherit;border:1px solid var(--line);
+  border-radius:11px;padding:9px 12px;margin-bottom:8px;}
+.rcall:hover{border-color:var(--accent);}
+.rtop{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.rtop b{font-size:12.5px;}
+.rttl{font-size:12px;color:var(--muted);line-height:1.4;margin:2px 0 3px;}
+.lean.sm{font-size:10px;padding:1px 8px;}
+@media(max-width:900px){.cols2{grid-template-columns:1fr;}}
+
 /* ---- combined signal ---- */
-.sig{margin-bottom:16px;}
+.sig{margin-bottom:16px;padding:15px 18px 13px;}
 .sighead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
   flex-wrap:wrap;margin-bottom:14px;}
-.sigline{font-size:17px;margin:3px 0 0;letter-spacing:-.01em;}
+.sigline{font-size:16px;margin:0 0 12px;letter-spacing:-.01em;}
 .sigline.agree{color:var(--accent);}
 .sigline.split{color:var(--ink);}
 .sigline.none{color:var(--faint);font-weight:500;}
 .sigrow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
-.sigc{border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+.sigc{border:1px solid var(--line);border-radius:11px;padding:10px 12px;
   background:var(--paper);}
 .sigc.off{opacity:.55;}
-.sigc .lab{text-transform:uppercase;margin-bottom:5px;}
+.sigc .lab{text-transform:uppercase;margin-bottom:5px;display:flex;
+  justify-content:space-between;align-items:baseline;}
+.sigc .hint{font-size:9px;opacity:.55;text-transform:none;letter-spacing:0;}
 .sigc .lean{display:inline-block;font-size:13px;font-weight:650;padding:2px 11px;
   border-radius:99px;margin-bottom:6px;}
 .sigc .lean.none{background:var(--line-soft);color:var(--faint);}
@@ -519,11 +576,10 @@ abbr{text-decoration:underline dotted rgba(140,155,170,.7);cursor:help;text-unde
   </div>
   <nav>
     <a href="/" class="{{ 'on' if page=='today' }}">Today</a>
+    <a href="/research" class="{{ 'on' if page=='research' }}">Research</a>
     <a href="/markets" class="{{ 'on' if page=='markets' }}">Markets</a>
     <a href="/positions" class="{{ 'on' if page=='positions' }}">Positions</a>
     <a href="/performance" class="{{ 'on' if page=='performance' }}">Performance</a>
-    <a href="/research" class="{{ 'on' if page=='research' }}">Research</a>
-    <a href="/charts" class="{{ 'on' if page=='charts' }}">Charts</a>
   </nav>
 </header>
 <main>

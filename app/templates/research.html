@@ -3,7 +3,7 @@
 {% set TABS = [
   ("articles", "Articles", "Saved posts with a read on SPY"),
   ("people",   "People",   "Who is saying what, by horizon"),
-  ("tweets",   "Tweets",   "Not connected yet"),
+  ("tweets",   "Tweets",   "Accounts tracked; the API is not connected"),
   ("news",     "News",     "Not connected yet"),
   ("paste",    "Paste in", "For paid posts that cannot be fetched"),
   ("sources",  "Sources",  "Which feeds are pulled"),
@@ -241,6 +241,42 @@
       </div>
       {% endif %}
       </div>
+    </div>
+
+  {# ------------------------------------------------------------------ TWEETS #}
+  {% elif tab == 'tweets' %}
+    <div class="banner warn">
+      <b>Not connected.</b> {{ xroster.status.detail }}.
+      Every free route is closed — nitter is dead, syndication rate-limits,
+      x.com serves a JavaScript shell with no tweet text, and the browser
+      extension is blocked from the domain. The roster below is live and ready;
+      connecting is a key, not a build.
+    </div>
+
+    <div class="card">
+      <h2>Accounts tracked
+        <span class="faint">{{ xroster.with_handle }} of {{ xroster.total }} have one</span></h2>
+      <div class="tscroll"><table>
+        <thead><tr><th>Person</th><th>Account</th><th></th></tr></thead>
+        <tbody>
+        {% for a in xroster.accounts %}
+        <tr class="{{ 'quiet' if not a.handle }}">
+          <td><b>{{ a.name }}</b></td>
+          <td>{% if a.handle %}
+            <a href="https://x.com/{{ a.handle }}" target="_blank"
+               rel="noopener">@{{ a.handle }}</a>
+            {% if a.kind == 'firm' %}<span class="faint"> · firm account</span>{% endif %}
+          {% else %}<span class="faint">none</span>{% endif %}</td>
+          <td class="faint">{{ a.note or '' }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      <p class="faint" style="margin-top:10px">
+        ⚠ Four of these have no account worth following — they publish through a
+        firm or appear only in interviews. Listing a guessed handle would put
+        someone else's posts under a name you trust, which is how five squatted
+        Substack handles nearly got added earlier.</p>
     </div>
 
   {# ------------------------------------------------------------------- PASTE #}

@@ -1,61 +1,468 @@
 {% extends "base.html" %}
-{% block title %}Today · Argent Ridge{% endblock %}
+{% block title %}{{ symbol }} · Argent Ridge{% endblock %}
 {% block content %}
 
-<div class="card">
-  <h1>Today</h1>
-  <p class="muted">{{ brief.generated_at_pt }} · {{ brief.rows|length }} instrument{{ '' if brief.rows|length == 1 else 's' }}
-    from <a href="/markets?list={{ list_id or '' }}">{{ list_name }}</a>
-    <a class="pill" style="margin-left:8px" href="?list={{ list_id or '' }}&amp;refresh=1">&#8635; Refresh</a>
-  </p>
-  {% for e in brief.events %}
-  <div class="banner warn" style="margin-top:10px">{{ e.text }}</div>
-  {% endfor %}
-</div>
-
-<div class="card">
-  <div class="tscroll">
-  <table>
-    <thead><tr>
-      <th>Instrument</th><th>Verdict</th><th>Nearest zone</th>
-      <th class="r">Last</th><th class="r">Day</th><th>Source</th>
-    </tr></thead>
-    <tbody>
-    {% for r in brief.rows %}
-      <tr>
-        <td>
-          <a class="sym" href="/symbol/{{ r.symbol }}">{{ r.symbol }}</a>
-          <span class="sub">{{ r.instrument.contract if r.instrument.kind == 'future' else r.instrument.name or r.instrument.kind }}</span>
-        </td>
-        <td>
-          {% if r.error %}<span class="chip off">unavailable</span>
-          {% elif r.verdict %}
-            <span class="chip {{ 'call' if 'CALL' in r.verdict else ('put' if 'PUT' in r.verdict else 'wait') }}">
-              {{ r.verdict.split(' - ')[0]|replace('IN ','')|title }}</span>
-          {% else %}<span class="chip off">no map</span>{% endif %}
-        </td>
-        <td class="sub">{{ r.near or ('—' if not r.error else r.error) }}</td>
-        <td class="r fig">{{ '%.2f'|format(r.price) if r.price else '—' }}</td>
-        <td class="r fig {{ 'up' if r.change_pct and r.change_pct > 0 else ('down' if r.change_pct and r.change_pct < 0 else '') }}">
-          {{ '%+.2f%%'|format(r.change_pct) if r.change_pct is not none else '—' }}</td>
-        <td class="sub">{{ r.quote.get('source_label', '—') if r.quote else '—' }}</td>
-      </tr>
+{# ============ 1. WHAT THE INPUTS SAY ============ #}
+<div class="tbar">
+  <div class="cpick">
+    {% for s in symbols %}
+    <a class="pill {{ 'on' if symbol == s }}"
+       href="/?symbol={{ s }}&horizon={{ horizon }}&interval={{ interval }}">{{ s }}</a>
     {% endfor %}
-    </tbody>
-  </table>
   </div>
-  {% if not brief.rows %}
-  <div class="empty"><h2>No symbols yet</h2>
-    <p class="muted">Add some to a watchlist and they'll appear here each morning.</p>
-    <p><a class="btn" href="/markets">Go to Markets</a></p></div>
-  {% endif %}
+  <div class="tprice">
+    <span class="fig">{{ '%.2f'|format(quote.price) if quote.price else '—' }}</span>
+    {% if quote.change_pct is not none %}
+    <span class="chg {{ 'up' if quote.change_pct >= 0 else 'down' }}">
+      {{ '%+.2f'|format(quote.change_pct) }}%</span>
+    {% endif %}
+    <span class="faint">{{ quote.source or '' }}</span>
+  </div>
+  <div class="cpick" style="margin-left:auto">
+    {% for k, l in horizons[:5] %}
+    <a class="pill sm {{ 'on' if horizon == k }}"
+       href="/?symbol={{ symbol }}&horizon={{ k }}&interval={{ interval }}">{{ l }}</a>
+    {% endfor %}
+  </div>
 </div>
 
-{% if degraded %}
-<div class="banner warn">
-  Prices are delayed. <a href="/admin/sources">Link Schwab</a> for real-time quotes across the whole list
-  in one request — Yahoo fetches one symbol per call and rate-limits beyond {{ cap }}.
+<div class="card sig">
+  <h2 class="sigline {{ signal.agreement }}">{{ signal.headline }}</h2>
+  <div class="sigrow">
+    {% for c in signal.components %}
+    <div class="sigc {{ 'off' if c.unavailable or not c.bias }}" tabindex="0">
+      <div class="lab">{{ c.component }}{% if c.who %}<span class="hint">hover</span>{% endif %}</div>
+      <div class="lean {{ c.bias if c.bias in ['bullish','bearish','neutral'] else 'none' }}">{{ c.bias or '—' }}</div>
+      <p class="faint">{{ c.detail }}</p>
+      {# ⭐ Who said it, not just how many. A count with no names cannot be checked. #}
+      {% if c.who %}
+      <div class="who">
+        <div class="whead">{{ 'who is saying what' if c.component == 'news' else 'the two signals' }}</div>
+        {% for w in c.who %}
+        <div class="wrow">
+          <b>{{ w.name }}</b>
+          <span class="{{ 'wb' if w.bias == 'bullish' else ('wr' if w.bias == 'bearish' else 'wn') }}">
+            {{ w.bias or '—' }}{% if w.note %} <span class="wn">· {{ w.note }}</span>{% endif %}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="faint signote">No single score — these measure different things and fail
+    differently. An average would hide which part was wrong.</p>
 </div>
-{% endif %}
 
+{# ============ 2. THE CHART ============ #}
+<div class="card cwrap">
+  <div class="ctop">
+    <div class="cpick">
+      {% for iv, spec in intervals.items() %}
+      <button type="button" class="pill sm iv {{ 'on' if interval == iv }}"
+              data-iv="{{ iv }}">{{ spec.label }}</button>
+      {% endfor %}
+      {% for iv, src in derived.items() %}
+      <button type="button" class="pill sm iv {{ 'on' if interval == iv }}"
+              data-iv="{{ iv }}" title="Resampled from {{ src[0] }}">4 hour</button>
+      {% endfor %}
+    </div>
+    <div class="cmas">
+      <label><input type="checkbox" class="ma" data-n="20" checked> 20</label>
+      <label><input type="checkbox" class="ma" data-n="50" checked> 50</label>
+      <label><input type="checkbox" class="ma" data-n="200"> 200</label>
+      <label><input type="checkbox" id="showprof" checked> Profile</label>
+      <label><input type="checkbox" id="showvol"> Volume</label>
+    </div>
+  </div>
+
+  <p class="faint creadout" id="readout">&nbsp;</p>
+  <canvas id="cv" height="300"></canvas>
+  <div class="chint">
+    <span>scroll to zoom · drag to pan · double-click resets</span>
+    <span class="gap"></span>
+    <span class="hsize">height
+      <button type="button" data-h="170">S</button>
+      <button type="button" data-h="230" class="on">M</button>
+      <button type="button" data-h="340">L</button>
+      <button type="button" data-h="520">XL</button></span>
+    <span id="cmeta"></span>
+  </div>
+</div>
+
+{# ============ 3. LEVELS + RECENT CALLS ============ #}
+<div class="cols2">
+  <div class="card">
+    <h2>Levels from volume
+      <span class="faint">{{ quant.n }} sessions</span></h2>
+    {% if quant.sessions %}
+    <p class="muted lvlsum">
+      <b>{{ quant.verdict.label }}</b>{% if quant.verdict.ref %} ·
+      reference <span class="fig">{{ quant.verdict.ref }}</span>{% endif %} ·
+      {{ quant.migration.label }}</p>
+    <div class="tscroll"><table class="lvt">
+      <thead><tr><th>Session</th><th class="r">POC</th><th class="r">VAH</th>
+        <th class="r">VAL</th><th class="r">VWAP</th></tr></thead>
+      <tbody>
+      {% for r in quant.sessions[:7] %}
+      <tr>
+        <td>{{ r.date[5:] }}</td>
+        <td class="r fig"><b>{{ '%.2f'|format(r.poc) if r.poc else '—' }}</b></td>
+        <td class="r fig">{{ '%.2f'|format(r.vah) if r.vah else '—' }}</td>
+        <td class="r fig">{{ '%.2f'|format(r.val) if r.val else '—' }}</td>
+        <td class="r fig sub">{{ '%.2f'|format(r.vwap) if r.vwap else '—' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <p class="muted">No intraday bars archived for {{ symbol }} yet.</p>
+    {% endif %}
+    <p class="faint arch">{{ '{:,}'.format(coverage.bars) }} bars held ·
+      newest {{ coverage.last[:16].replace('T',' ') if coverage.last else '—' }} ·
+      <form method="post" action="/charts/sync" class="inline">
+        <input type="hidden" name="symbol" value="{{ symbol }}">
+        <button class="linkbtn" type="submit">sync</button></form></p>
+  </div>
+
+  <div class="card">
+    <h2>Latest calls <span class="faint">from Research</span></h2>
+    {% for a in recent %}
+    <a class="rcall" href="/research/{{ a.id }}">
+      <div class="rtop">
+        <b>{{ a.source_label.split(' · ')[0] }}</b>
+        <span class="lean sm {{ a.read.bias }}">{{ a.read.bias }}</span>
+      </div>
+      <div class="rttl">{{ a.title[:74] }}</div>
+      <div class="faint">{{ a.published_at|pt_date }} ·
+        {{ a.read.calls | map(attribute='horizon') | join(', ') }}</div>
+    </a>
+    {% endfor %}
+    {% if not recent %}<p class="muted">Nothing read yet.</p>{% endif %}
+    <p class="faint"><a href="/research">All research &rarr;</a></p>
+  </div>
+</div>
+
+<script id="bars" type="application/json">{{ series|tojson }}</script>
+<script id="lv" type="application/json">{{ (quant.prior or {})|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Candles + moving averages + a VOLUME PROFILE on the price axis.
+   ⭐ The profile is computed from the VISIBLE bars and redrawn on every zoom,
+   so it always describes the window you are actually looking at — a profile
+   fixed to the whole series would describe a range you cannot see.
+   ⛔ No chart library: the CSP forbids external scripts, and this is ~200
+   lines against a 300 KB dependency. */
+(function () {
+  var cv = document.getElementById('cv'), readout = document.getElementById('readout'),
+      meta = document.getElementById('cmeta');
+  if (!cv) return;
+  var bars = JSON.parse(document.getElementById('bars').textContent);
+  var prior = JSON.parse(document.getElementById('lv').textContent || '{}');
+  var interval = {{ interval|tojson }}, symbol = {{ symbol|tojson }};
+
+  var css = getComputedStyle(document.documentElement);
+  function tok(n, f) { return (css.getPropertyValue(n) || f).trim(); }
+  var UP = tok('--up', '#2f9e8f'), DOWN = tok('--down', '#c0563f'),
+      LINE = tok('--line', '#e6eaef'), FAINT = tok('--faint', '#93a1b0'),
+      MUTED = tok('--muted', '#6e7c8a'), ACC = tok('--accent', '#3e7c8f');
+  var MAC = { 20: ACC, 50: '#b58a4a', 200: '#8a6fb0' };
+
+  var view = null, drag = null, hover = null, MAS = {},
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  function computeMAs() {
+    MAS = {};
+    [20, 50, 200].forEach(function (n) {
+      var out = [], run = 0;
+      for (var i = 0; i < bars.length; i++) {
+        run += bars[i][4];
+        if (i >= n) run -= bars[i - n][4];
+        out.push(i >= n - 1 ? run / n : null);
+      }
+      MAS[n] = out;
+    });
+  }
+  function resetView() {
+    var n = Math.min(bars.length, 140);
+    view = { i0: Math.max(0, bars.length - n), i1: bars.length };
+  }
+  function onMAs() {
+    var on = [];
+    document.querySelectorAll('.ma').forEach(function (c) { if (c.checked) on.push(+c.dataset.n); });
+    return on;
+  }
+  var showProf = function () { return document.getElementById('showprof').checked; };
+  var showVol = function () { return document.getElementById('showvol').checked; };
+
+  /* The volume profile: bin the visible bars by price, weighted by volume.
+     ⚠ Volume is spread across each bar's high-low range rather than dumped at
+     the close — a bar that traded a 3-point range did not trade all of it at
+     one price, and piling it on the close invents a spike that never existed. */
+  function profile(slice, lo, hi, nbins) {
+    var bins = new Array(nbins).fill(0), span = hi - lo || 1;
+    slice.forEach(function (b) {
+      var l = b[3], h = b[2], v = b[5] || 1;
+      var a = Math.max(0, Math.min(nbins - 1, Math.floor((l - lo) / span * nbins)));
+      var z = Math.max(0, Math.min(nbins - 1, Math.floor((h - lo) / span * nbins)));
+      var n = z - a + 1, share = v / n;
+      for (var k = a; k <= z; k++) bins[k] += share;
+    });
+    var max = 0, poc = 0;
+    bins.forEach(function (v, i) { if (v > max) { max = v; poc = i; } });
+    return { bins: bins, max: max, poc: poc };
+  }
+
+  function fmt(v) { return v.toFixed(2); }
+  function fmtT(t) {
+    var d = new Date(t * 1000), intraday = ['1m','5m','15m','30m','1h','4h'].indexOf(interval) >= 0;
+    return d.toLocaleString('en-US', intraday
+      ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+          timeZone: 'America/Los_Angeles' }
+      : { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' });
+  }
+
+  function draw() {
+    if (!bars.length) return;
+    // ⚠ Fall back rather than trusting layout: a 0 here permanently zeroes
+    // the backing store and the chart silently disappears.
+    var W = cv.clientWidth || cv.parentNode.clientWidth || 640;
+    var H = cv.clientHeight || 300;
+    cv.width = W * dpr; cv.height = H * dpr;
+    var x = cv.getContext('2d');
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    x.clearRect(0, 0, W, H);
+
+    var i0 = Math.max(0, Math.floor(view.i0)), i1 = Math.min(bars.length, Math.ceil(view.i1));
+    var slice = bars.slice(i0, i1);
+    if (!slice.length) return;
+
+    var padL = 6, padR = 56, padT = 8, padB = 20;
+    var profW = showProf() ? Math.max(58, Math.min(96, W * 0.13)) : 0;
+    var volH = showVol() ? 38 : 0;
+    var plotH = H - padT - padB - volH;
+    var plotW = W - padL - padR - profW;
+
+    var mas = onMAs(), lo = Infinity, hi = -Infinity;
+    slice.forEach(function (b) { if (b[3] < lo) lo = b[3]; if (b[2] > hi) hi = b[2]; });
+    mas.forEach(function (n) {
+      for (var i = i0; i < i1; i++) { var v = MAS[n][i];
+        if (v !== null) { if (v < lo) lo = v; if (v > hi) hi = v; } }
+    });
+    [prior.poc, prior.vah, prior.val].forEach(function (v) {
+      if (v) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    });
+    var pad = (hi - lo) * 0.05 || 1; lo -= pad; hi += pad;
+
+    var bw = plotW / slice.length;
+    function px(i) { return padL + (i + 0.5) * bw; }
+    function py(v) { return padT + (hi - v) / (hi - lo) * plotH; }
+
+    /* grid + price axis */
+    x.font = '10px ui-rounded, system-ui, sans-serif';
+    for (var g = 0; g <= 4; g++) {
+      var v = lo + (hi - lo) * g / 4, yy = Math.round(py(v)) + 0.5;
+      x.strokeStyle = LINE; x.globalAlpha = .5;
+      x.beginPath(); x.moveTo(padL, yy); x.lineTo(padL + plotW + profW, yy); x.stroke();
+      x.globalAlpha = 1; x.fillStyle = FAINT;
+      x.fillText(fmt(v), padL + plotW + profW + 5, yy + 3);
+    }
+
+    /* the profile, on the price axis */
+    if (profW) {
+      var nb = Math.max(24, Math.min(70, Math.round(plotH / 5)));
+      var pr = profile(slice, lo, hi, nb);
+      var bh = plotH / nb;
+      for (var k = 0; k < nb; k++) {
+        var w = pr.max ? (pr.bins[k] / pr.max) * (profW - 8) : 0;
+        var yTop = padT + plotH - (k + 1) * bh;
+        var isPoc = k === pr.poc;
+        x.fillStyle = isPoc ? ACC : MUTED;
+        x.globalAlpha = isPoc ? .55 : .22;
+        x.fillRect(padL + plotW + 3, yTop + .4, w, Math.max(bh - .8, 1));
+      }
+      x.globalAlpha = 1;
+      var pocPrice = lo + (pr.poc + .5) / nb * (hi - lo);
+      x.fillStyle = ACC; x.font = '9px ui-rounded, system-ui, sans-serif';
+      x.textAlign = 'right';
+      x.fillText('POC ' + fmt(pocPrice), padL + plotW + profW - 2, py(pocPrice) - 4);
+      x.textAlign = 'left';
+    }
+
+    /* Prior session value area — INTRADAY ONLY.
+       ⛔ On a daily or weekly chart the last session's value area is a
+       two-point band inside a 160-point range: three labels land on one pixel
+       row and say nothing. It describes a session, so it belongs on a chart
+       whose bars are inside one. */
+    var intraday = ['1m','5m','15m','30m','1h','4h'].indexOf(interval) >= 0;
+    if (intraday && prior.vah && prior.val) {
+      x.fillStyle = ACC; x.globalAlpha = .07;
+      x.fillRect(padL, py(prior.vah), plotW, py(prior.val) - py(prior.vah));
+      x.globalAlpha = 1;
+      // ⚠ Skip a label whose row is already taken — three lines within a
+      // couple of pixels rendered as one illegible smear.
+      var used = [];
+      [[prior.vah, 'VAH'], [prior.poc, 'yPOC'], [prior.val, 'VAL']].forEach(function (p) {
+        if (!p[0]) return;
+        var Y = py(p[0]);
+        x.strokeStyle = ACC; x.globalAlpha = .4; x.setLineDash([4, 4]);
+        x.beginPath(); x.moveTo(padL, Y); x.lineTo(padL + plotW, Y); x.stroke();
+        x.setLineDash([]); x.globalAlpha = 1;
+        if (used.some(function (u) { return Math.abs(u - Y) < 11; })) return;
+        used.push(Y);
+        x.fillStyle = ACC; x.globalAlpha = .85;
+        x.fillText(p[1] + ' ' + fmt(p[0]), padL + 3, Y - 3);
+        x.globalAlpha = 1;
+      });
+    }
+
+    /* volume strip */
+    if (volH) {
+      var vmax = 0; slice.forEach(function (b) { if (b[5] > vmax) vmax = b[5]; });
+      var vTop = padT + plotH + 4;
+      slice.forEach(function (b, k) {
+        if (!vmax) return;
+        var h = (b[5] / vmax) * (volH - 6);
+        x.fillStyle = b[4] >= b[1] ? UP : DOWN; x.globalAlpha = .25;
+        x.fillRect(px(k) - Math.max(bw * .3, .5), vTop + (volH - 6 - h),
+                   Math.max(bw * .6, 1), h);
+      });
+      x.globalAlpha = 1;
+    }
+
+    /* candles */
+    var body = Math.max(bw * .6, 1);
+    slice.forEach(function (b, k) {
+      var up = b[4] >= b[1], c = up ? UP : DOWN, cx = px(k);
+      x.strokeStyle = c; x.fillStyle = c;
+      x.lineWidth = Math.min(1.1, Math.max(bw * .1, .6));
+      x.beginPath(); x.moveTo(cx, py(b[2])); x.lineTo(cx, py(b[3])); x.stroke();
+      var yo = py(b[1]), yc = py(b[4]);
+      var top = Math.min(yo, yc), hgt = Math.max(Math.abs(yc - yo), .8);
+      if (bw > 2) x.fillRect(cx - body / 2, top, body, hgt);
+      else { x.beginPath(); x.moveTo(cx, top); x.lineTo(cx, top + hgt); x.stroke(); }
+    });
+
+    /* moving averages */
+    mas.forEach(function (n) {
+      x.strokeStyle = MAC[n] || ACC; x.lineWidth = 1.3;
+      x.beginPath(); var started = false;
+      for (var i = i0; i < i1; i++) {
+        var v = MAS[n][i];
+        if (v === null) { started = false; continue; }
+        var X = px(i - i0), Y = py(v);
+        if (!started) { x.moveTo(X, Y); started = true; } else x.lineTo(X, Y);
+      }
+      x.stroke();
+    });
+
+    /* time axis */
+    /* ⚠ On an intraday window every bar is the same DATE, so five copies of
+       "Sep 18" told you nothing. Show the clock there and the date on
+       daily/weekly. */
+    x.fillStyle = FAINT;
+    var spanDays = (slice[slice.length - 1][0] - slice[0][0]) / 86400;
+    for (var t = 0; t < 5 && slice.length > 1; t++) {
+      var idx = Math.floor(t * (slice.length - 1) / 4);
+      var d = new Date(slice[idx][0] * 1000);
+      var lbl = spanDays > 2
+        ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric',
+                                          timeZone: 'America/Los_Angeles' })
+        : d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit',
+                                          timeZone: 'America/Los_Angeles' });
+      x.fillText(lbl, Math.min(px(idx) - 16, padL + plotW - 44), H - 6);
+    }
+
+    /* crosshair */
+    if (hover !== null && hover < padL + plotW) {
+      var hi2 = Math.max(0, Math.min(slice.length - 1, Math.round((hover - padL) / bw - .5)));
+      var b = slice[hi2];
+      x.strokeStyle = FAINT; x.globalAlpha = .5; x.setLineDash([3, 3]);
+      x.beginPath(); x.moveTo(px(hi2), padT); x.lineTo(px(hi2), padT + plotH); x.stroke();
+      x.setLineDash([]); x.globalAlpha = 1;
+      readout.textContent = fmtT(b[0]) + '   O ' + fmt(b[1]) + '  H ' + fmt(b[2]) +
+        '  L ' + fmt(b[3]) + '  C ' + fmt(b[4]) +
+        (b[5] ? '   vol ' + b[5].toLocaleString() : '');
+    }
+    meta.textContent = slice.length + ' of ' + bars.length + ' bars';
+  }
+
+  cv.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var span = view.i1 - view.i0, f = e.deltaY > 0 ? 1.18 : .85;
+    var next = Math.max(20, Math.min(bars.length, span * f));
+    var frac = e.offsetX / cv.clientWidth, mid = view.i0 + span * frac;
+    view.i0 = Math.max(0, mid - next * frac);
+    view.i1 = Math.min(bars.length, view.i0 + next);
+    if (view.i1 - view.i0 < next) view.i0 = Math.max(0, view.i1 - next);
+    draw();
+  }, { passive: false });
+  cv.addEventListener('mousedown', function (e) { drag = { x: e.clientX, i0: view.i0, i1: view.i1 }; });
+  window.addEventListener('mouseup', function () { drag = null; });
+  cv.addEventListener('mousemove', function (e) {
+    hover = e.offsetX;
+    if (drag) {
+      var span = drag.i1 - drag.i0;
+      var d = (e.clientX - drag.x) / cv.clientWidth * span;
+      view.i0 = Math.max(0, Math.min(bars.length - span, drag.i0 - d));
+      view.i1 = view.i0 + span;
+    }
+    draw();
+  });
+  cv.addEventListener('mouseleave', function () {
+    hover = null; readout.innerHTML = '&nbsp;'; draw();
+  });
+  cv.addEventListener('dblclick', function () { resetView(); draw(); });
+  document.querySelectorAll('.ma, #showvol, #showprof').forEach(function (c) {
+    c.addEventListener('change', draw);
+  });
+  window.addEventListener('resize', draw);
+
+  /* ⭐ Interval switching fetches JSON and redraws. It does NOT reload the
+     page — re-rendering the combined read and the levels to change a
+     timeframe is what made this feel slow. */
+  document.querySelectorAll('.iv').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var iv = b.dataset.iv;
+      document.querySelectorAll('.iv').forEach(function (o) { o.classList.toggle('on', o === b); });
+      meta.textContent = 'loading…';
+      fetch('/api/bars?symbol=' + symbol + '&interval=' + iv + '&bars=600',
+            { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          bars = d.bars || []; interval = iv;
+          computeMAs(); resetView(); draw();
+          history.replaceState(null, '', '/?symbol=' + symbol +
+            '&horizon={{ horizon }}&interval=' + iv);
+        })
+        .catch(function () { meta.textContent = 'could not load ' + iv; });
+    });
+  });
+
+  /* ⚠ The height is a CSS variable, remembered. A chart that resets to
+     someone else's idea of the right size on every navigation is a chart you
+     re-adjust every time. */
+  (function () {
+    var KEY = 'ar_chart_h';
+    function setH(px) {
+      document.documentElement.style.setProperty('--chart-h', px + 'px');
+      document.querySelectorAll('.hsize button').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.h === String(px));
+      });
+      try { localStorage.setItem(KEY, px); } catch (e) {}
+      requestAnimationFrame(draw);
+    }
+    document.querySelectorAll('.hsize button').forEach(function (b) {
+      b.addEventListener('click', function () { setH(+b.dataset.h); });
+    });
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    setH(saved ? +saved : 230);
+  })();
+
+  computeMAs(); resetView(); draw();
+})();
+</script>
 {% endblock %}

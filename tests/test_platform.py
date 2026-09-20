@@ -286,6 +286,9 @@ def main() -> int:
     test_reads_never_fetch()
     test_live_snapshot_never_fetches_on_read()
     test_archive_primed_before_ready()
+    test_corrupt_bars_are_dropped_but_real_events_survive()
+    test_chart_has_a_css_height()
+    test_x_roster_is_honest()
     print()
     if FAILS:
         print(f"FAILED ({len(FAILS)}): " + ", ".join(FAILS))
@@ -803,6 +806,71 @@ def test_archive_primed_before_ready() -> None:
           and "threading.Thread(target=_warm_archive" not in startup,
           "a daemon thread would be CPU-throttled after boot")
     check("a sync loop runs off the request path", "_sync_loop" in startup)
+
+
+
+# --- 29. chart + data quality ----------------------------------------------
+
+def test_corrupt_bars_are_dropped_but_real_events_survive() -> None:
+    print("\n29. bad ticks out, real volatility kept")
+    from core import barstore as B
+    from core.profile import Bar
+    from datetime import datetime, timedelta, timezone
+
+    t0 = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    bars = [Bar(ts=t0 + timedelta(minutes=5 * i), open=760, high=760.3,
+                low=759.8, close=760.1, volume=10000) for i in range(60)]
+    # a corrupt print: huge range, NO volume
+    bars[30] = Bar(ts=bars[30].ts, open=760, high=760.3, low=660.0,
+                   close=760.1, volume=0)
+    # a real event: huge range WITH volume
+    bars[40] = Bar(ts=bars[40].ts, open=760, high=790.0, low=730.0,
+                   close=735.0, volume=900000)
+    kept, dropped = B.clean(bars)
+    lows = [b.low for b in kept]
+    check("the zero-volume 660 print is dropped", 660.0 not in lows, str(dropped))
+    check("the real 730 low SURVIVES", 730.0 in lows,
+          "a wild range WITH volume is an event, not a glitch")
+    check("exactly one bar removed", dropped == 1, str(dropped))
+
+    # ⛔ MUTATION PROOF: without the volume condition the real event dies too.
+    naive = [b for b in bars if (b.high - b.low) <= 0.5 * 12]
+    check("(proof) a range-only rule would delete the real event",
+          730.0 not in [b.low for b in naive])
+    # ⚠ Empty extended-hours slots must NOT be dropped — 59% of SPY 5m.
+    quiet = [Bar(ts=t0 + timedelta(minutes=5 * i), open=760, high=760.0,
+                 low=760.0, close=760.0, volume=0) for i in range(40)]
+    k2, d2 = B.clean(bars[:20] + quiet)
+    check("flat zero-volume slots are kept", d2 == 0, f"{d2} dropped")
+
+
+def test_chart_has_a_css_height() -> None:
+    print("\n30. the canvas cannot be sized to zero")
+    base = open(os.path.join(ROOT, "app/templates/base.html")).read()
+    # ⛔ With only a height ATTRIBUTE, draw() read clientHeight before layout,
+    # got 0, and set the backing store to 0 — a blank chart with no error.
+    check("#cv has a CSS height", "#cv{width:100%;height:var(--chart-h" in base)
+    today = open(os.path.join(ROOT, "app/templates/today.html")).read()
+    check("draw() falls back rather than trusting layout",
+          "cv.clientHeight || 300" in today)
+    check("the height is adjustable and remembered",
+          "ar_chart_h" in today and "--chart-h" in today)
+    # ⚠ `{#` inside a media query is a Jinja comment opener.
+    check("no `{#` typo in the stylesheet", "{#cv" not in base,
+          "@media(...){#cv{ broke the whole template")
+
+
+def test_x_roster_is_honest() -> None:
+    print("\n31. the X roster states what it does not have")
+    from core import research as R
+    r = R.x_roster()
+    check("every entry has a name", all(a.get("name") for a in r["accounts"]))
+    missing = [a for a in r["accounts"] if not a.get("handle")]
+    check("accounts without a handle say why",
+          all(a.get("note") for a in missing), f"{len(missing)} have none")
+    check("the status is unavailable, not neutral",
+          r["status"].get("unavailable") and r["status"].get("bias") is None)
+    check("counts are real", r["with_handle"] + len(missing) == r["total"])
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -72,6 +72,7 @@ _MEM_TTL = 300.0
 # The cooldown is capped at an hour so a live session still updates promptly,
 # and floored at a minute so a 1-minute chart is not throttled.
 _TRIED: dict[str, float] = {}
+_DROPPED: dict[str, int] = {}
 
 
 def _cooldown(interval: str) -> float:
@@ -155,6 +156,49 @@ def interval_ok(bars: list[Bar], interval: str, tol: float = 0.45) -> tuple[bool
     return True, f"median gap {med/60:.0f} min"
 
 
+# --- data quality -----------------------------------------------------------
+
+WILD = 12.0   # multiples of the median range before a bar is suspect
+
+
+def clean(bars: list[Bar]) -> tuple[list[Bar], int]:
+    """Drop corrupt bars. Returns (kept, dropped).
+
+    ⛔⛔ THE ARCHIVE CONTAINS GARBAGE TICKS AND THEY POISON EVERYTHING.
+    Measured 2026-09-20 on SPY 5-minute: one bar reported a low of **660.65**
+    while SPY traded 760 — a 100-point wick that never happened. It sets the
+    chart's axis, widens the session range that sizes the profile bin, and
+    would be a fill in any backtest.
+
+    ⭐ THE RULE THAT SEPARATES CORRUPT FROM REAL: a bar is dropped only when
+    its range is wildly out of line with its neighbours **AND it has zero
+    volume**. Zero volume means nothing traded there, so the wick is not a
+    print. A wild range WITH volume is a real event — a crash open, a halt
+    reopening — and must survive. SPY's daily series has exactly one 15x bar
+    and it carries volume; it is kept.
+
+    ⚠ Zero-volume bars on their own are NOT dropped. `includePrePost=true`
+    means most extended-hours slots are legitimately empty, and they are 59%
+    of the SPY 5-minute series. Removing them would silently change every
+    session boundary.
+    """
+    if len(bars) < 20:
+        return bars, 0
+    rngs = sorted(b.high - b.low for b in bars if b.high > b.low)
+    if not rngs:
+        return bars, 0
+    med = rngs[len(rngs) // 2] or 0.0
+    if med <= 0:
+        return bars, 0
+    keep, dropped = [], 0
+    for b in bars:
+        if (b.high - b.low) > med * WILD and not (b.volume or 0):
+            dropped += 1
+            continue
+        keep.append(b)
+    return keep, dropped
+
+
 # --- reading ----------------------------------------------------------------
 
 def read_store(symbol: str, interval: str, months: int = 0) -> list[Bar]:
@@ -179,6 +223,11 @@ def read_store(symbol: str, interval: str, months: int = 0) -> list[Bar]:
     except Exception:  # noqa: BLE001
         return []
     bars.sort(key=lambda b: b.ts)
+    # ⛔ Clean on READ so the existing archive is corrected without a refetch,
+    # and the cached copy is the clean one — every consumer sees the same rows.
+    bars, dropped = clean(bars)
+    if dropped:
+        _DROPPED[key] = dropped
     with _LOCK:
         _MEM[key] = (now, bars)
     return list(bars)
@@ -195,6 +244,7 @@ def coverage(symbol: str, interval: str) -> dict:
         "symbol": symbol, "interval": interval, "bars": len(bars),
         "first": bars[0].ts.isoformat(), "last": last.isoformat(),
         "stale_hours": round((datetime.now(timezone.utc) - last).total_seconds() / 3600, 1),
+        "dropped": _DROPPED.get(f"{symbol}:{interval}", 0),
     }
 
 

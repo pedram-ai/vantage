@@ -47,10 +47,15 @@ def _news(horizon: str = "24h", days: int = 14) -> dict:
                 voices[who] = b
     pv = {k: sum(1 for v in voices.values() if v == k) for k in LEAN}
     total = sum(pv.values())
+    # ⭐ WHO said it, not just how many. A count with no names cannot be
+    # checked; this is what the hover breakdown renders.
+    order = {"bullish": 0, "bearish": 1, "neutral": 2}
     return {
         "component": "news",
         "bias": (max(pv, key=pv.get) if total else None),
         "tally": pv, "voices": total, "articles_read": n_read,
+        "who": sorted(({"name": k, "bias": v} for k, v in voices.items()),
+                      key=lambda r: (order.get(r["bias"], 9), r["name"])),
         "detail": (", ".join(f"{v} {k}" for k, v in pv.items() if v)
                    or "nobody addresses this horizon yet"),
     }
@@ -76,11 +81,20 @@ def _x() -> dict:
 def _quant(symbol: str) -> dict:
     from . import quant
     q = quant.quant_bias(symbol)
+    acc, mig = q.get("acceptance") or {}, q.get("migration") or {}
     return {
         "component": "quant", "bias": q.get("bias"),
         "voices": q.get("sessions", 0),
         "price": q.get("price"),
-        "acceptance": q.get("acceptance"), "migration": q.get("migration"),
+        "acceptance": acc, "migration": mig,
+        # the two independent signals, named — they can disagree
+        "who": [x for x in (
+            {"name": "acceptance", "bias": acc.get("bias"),
+             "note": acc.get("label")} if acc.get("label") else None,
+            {"name": "POC migration",
+             "bias": {"up": "bullish", "down": "bearish"}.get(mig.get("trend")),
+             "note": mig.get("label")} if mig.get("label") else None,
+        ) if x],
         "detail": q.get("why") or "not enough sessions in the archive",
     }
 

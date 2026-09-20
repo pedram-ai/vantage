@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Today · Argent Ridge{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>Today</h1>
+  <p class="muted">{{ brief.generated_at_pt }} · {{ brief.rows|length }} instrument{{ '' if brief.rows|length == 1 else 's' }}
+    from <a href="/markets?list={{ list_id or '' }}">{{ list_name }}</a>
+    <a class="pill" style="margin-left:8px" href="?list={{ list_id or '' }}&amp;refresh=1">&#8635; Refresh</a>
+  </p>
+  {% for e in brief.events %}
+  <div class="banner warn" style="margin-top:10px">{{ e.text }}</div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="tscroll">
+  <table>
+    <thead><tr>
+      <th>Instrument</th><th>Verdict</th><th>Nearest zone</th>
+      <th class="r">Last</th><th class="r">Day</th><th>Source</th>
+    </tr></thead>
+    <tbody>
+    {% for r in brief.rows %}
+      <tr>
+        <td>
+          <a class="sym" href="/symbol/{{ r.symbol }}">{{ r.symbol }}</a>
+          <span class="sub">{{ r.instrument.contract if r.instrument.kind == 'future' else r.instrument.name or r.instrument.kind }}</span>
+        </td>
+        <td>
+          {% if r.error %}<span class="chip off">unavailable</span>
+          {% elif r.verdict %}
+            <span class="chip {{ 'call' if 'CALL' in r.verdict else ('put' if 'PUT' in r.verdict else 'wait') }}">
+              {{ r.verdict.split(' - ')[0]|replace('IN ','')|title }}</span>
+          {% else %}<span class="chip off">no map</span>{% endif %}
+        </td>
+        <td class="sub">{{ r.near or ('—' if not r.error else r.error) }}</td>
+        <td class="r fig">{{ '%.2f'|format(r.price) if r.price else '—' }}</td>
+        <td class="r fig {{ 'up' if r.change_pct and r.change_pct > 0 else ('down' if r.change_pct and r.change_pct < 0 else '') }}">
+          {{ '%+.2f%%'|format(r.change_pct) if r.change_pct is not none else '—' }}</td>
+        <td class="sub">{{ r.quote.get('source_label', '—') if r.quote else '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if not brief.rows %}
+  <div class="empty"><h2>No symbols yet</h2>
+    <p class="muted">Add some to a watchlist and they'll appear here each morning.</p>
+    <p><a class="btn" href="/markets">Go to Markets</a></p></div>
+  {% endif %}
+</div>
+
+{% if degraded %}
+<div class="banner warn">
+  Prices are delayed. <a href="/admin/sources">Link Schwab</a> for real-time quotes across the whole list
+  in one request — Yahoo fetches one symbol per call and rate-limits beyond {{ cap }}.
+</div>
+{% endif %}
+
+{% endblock %}
