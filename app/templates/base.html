@@ -299,6 +299,25 @@ a.card-link:hover .cardgo{font-weight:600;}
 .hd.here{outline:1.5px solid var(--accent);}
 .pgo{font-size:11.5px;color:var(--accent);text-decoration:none;white-space:nowrap;}
 .pgo:hover{text-decoration:underline;}
+/* ---- combined signal ---- */
+.sig{margin-bottom:16px;}
+.sighead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+  flex-wrap:wrap;margin-bottom:14px;}
+.sigline{font-size:17px;margin:3px 0 0;letter-spacing:-.01em;}
+.sigline.agree{color:var(--accent);}
+.sigline.split{color:var(--ink);}
+.sigline.none{color:var(--faint);font-weight:500;}
+.sigrow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.sigc{border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+  background:var(--paper);}
+.sigc.off{opacity:.55;}
+.sigc .lab{text-transform:uppercase;margin-bottom:5px;}
+.sigc .lean{display:inline-block;font-size:13px;font-weight:650;padding:2px 11px;
+  border-radius:99px;margin-bottom:6px;}
+.sigc .lean.none{background:var(--line-soft);color:var(--faint);}
+.sigc p{margin:0;line-height:1.45;}
+.signote{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--line);line-height:1.45;}
+@media(max-width:760px){.sigrow{grid-template-columns:1fr;}}
 @media(max-width:900px){
   .prow{grid-template-columns:1fr;gap:7px;}
   .hdots{flex-wrap:wrap;}

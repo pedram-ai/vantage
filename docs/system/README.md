@@ -31,6 +31,7 @@ page reads these files off disk at request time and stamps them with the build t
 | [12](./12-testing.md) | **Testing** | The nine suites, and why a green typecheck proves nothing |
 | [13](./13-research.md) | **Research** | Substack in, a read on SPY out, and what keeps it honest |
 | [14](./14-spy-conversion.md) | **SPY conversion** | Why the model never does the arithmetic, and why the ratio is dated |
+| [15](./15-quant-and-consensus.md) | **Quant & consensus** | Levels from volume, and why three inputs are never averaged |
 
 ## How to read a document
 

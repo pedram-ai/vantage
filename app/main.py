@@ -283,7 +283,7 @@ def api_symbols(request: Request, q: str = ""):
 
 @app.get("/charts", response_class=HTMLResponse)
 def charts_page(request: Request, symbol: str = "SPY", interval: str = "1d",
-                bars: int = 300):
+                bars: int = 300, horizon: str = "24h"):
     """Candles for SPY and ES across every timeframe, from the local archive."""
     check_user(request)
     from core import barstore
@@ -293,9 +293,13 @@ def charts_page(request: Request, symbol: str = "SPY", interval: str = "1d",
     if interval not in barstore.INTERVALS and interval not in barstore.DERIVED:
         interval = "1d"
     bars = max(60, min(int(bars or 300), 1500))
+    from core import consensus, quant
     yah = CHART_SYMBOLS[symbol]
     rows, info = barstore.bars_for(yah, interval, bars)
+    lv = quant.levels(yah, 10)
     return templates.TemplateResponse(request, "charts.html", _ctx(request, **{
+        "quant": lv, "signal": consensus.read(yah, horizon),
+        "horizon": horizon, "horizons": __import__("core.research", fromlist=["x"]).HORIZONS,
         "page": "charts", "tape": _tape(), "symbol": symbol, "interval": interval,
         "nbars": bars, "info": info,
         "series": [{"t": int(b.ts.timestamp()), "o": round(b.open, 4),

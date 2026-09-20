@@ -26,6 +26,41 @@
   </form>
 </div>
 
+{# ============ THE COMBINED READ ============ #}
+<div class="card sig">
+  <div class="sighead">
+    <div>
+      <div class="lab">What the three inputs say about {{ symbol }}</div>
+      <h2 class="sigline {{ signal.agreement }}">{{ signal.headline }}</h2>
+    </div>
+    <div class="cpick">
+      {% for k, l in horizons[:4] %}
+      <a class="pill {{ 'on' if horizon == k }}"
+         href="/charts?symbol={{ symbol }}&interval={{ interval }}&horizon={{ k }}">{{ l }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="sigrow">
+    {% for c in signal.components %}
+    <div class="sigc {{ 'off' if c.unavailable or not c.bias }}">
+      <div class="lab">{{ c.component }}</div>
+      {% if c.bias %}
+      <div class="lean {{ c.bias if c.bias in ['bullish','bearish','neutral'] else 'neutral' }}">{{ c.bias }}</div>
+      {% else %}
+      <div class="lean none">—</div>
+      {% endif %}
+      <p class="faint">{{ c.detail }}</p>
+      {% if c.voices %}<p class="faint">{{ c.voices }}
+        {{ 'voice' if c.component == 'news' else 'session' }}{{ '' if c.voices == 1 else 's' }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="faint signote">⛔ Deliberately no single score. These measure different
+    things and fail differently — news is opinion, the profile is arithmetic over
+    volume. A weighted average would hide which part was wrong.</p>
+</div>
+
 <div class="card cwrap">
   <div class="ctop">
     <div>
@@ -55,6 +90,44 @@
     <span>{{ series|length }} bars held
       {%- if info.derived_from %} · resampled from {{ info.derived_from }}{% endif %}</span>
   </div>
+  {% endif %}
+</div>
+
+{# ============ QUANT LEVELS ============ #}
+<div class="card">
+  <h2>Levels from volume
+    <span class="faint">{{ quant.n }} sessions · POC, value area and VWAP per day</span></h2>
+  {% if quant.sessions %}
+  <p class="muted" style="margin:0 0 10px">
+    Price <b class="fig">{{ '%.2f'|format(quant.price) if quant.price else '—' }}</b> is
+    <b>{{ quant.verdict.label }}</b>{% if quant.verdict.ref %} (reference
+    <span class="fig">{{ quant.verdict.ref }}</span>){% endif %} ·
+    {{ quant.migration.label }}.</p>
+  <div class="tscroll"><table>
+    <thead><tr><th>Session</th><th class="r">POC</th><th class="r">VAH</th>
+      <th class="r">VAL</th><th class="r">VWAP</th><th class="r">Width</th>
+      <th class="r">High</th><th class="r">Low</th></tr></thead>
+    <tbody>
+    {% for r in quant.sessions %}
+    <tr>
+      <td>{{ r.date }}</td>
+      <td class="r fig"><b>{{ '%.2f'|format(r.poc) if r.poc else '—' }}</b></td>
+      <td class="r fig">{{ '%.2f'|format(r.vah) if r.vah else '—' }}</td>
+      <td class="r fig">{{ '%.2f'|format(r.val) if r.val else '—' }}</td>
+      <td class="r fig">{{ '%.2f'|format(r.vwap) if r.vwap else '—' }}</td>
+      <td class="r fig sub">{{ '%.2f'|format(r.width) if r.width else '—' }}</td>
+      <td class="r fig sub">{{ '%.2f'|format(r.high) if r.high else '—' }}</td>
+      <td class="r fig sub">{{ '%.2f'|format(r.low) if r.low else '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="faint" style="margin-top:9px">Each session is binned across its own range
+    (~40 bins), then snapped to the real tick — so these are prices you could work an
+    order at. Computed from the archive, never a live fetch.</p>
+  {% else %}
+  <p class="muted">No 5-minute bars archived for {{ symbol }} yet — use
+    <b>Sync archive</b>.</p>
   {% endif %}
 </div>
 

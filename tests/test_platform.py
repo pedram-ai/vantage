@@ -280,6 +280,9 @@ def main() -> int:
     test_partition_grain_is_not_monthly_for_daily()
     test_sync_does_not_refetch_what_cannot_have_changed()
     test_resample_groups_by_index_not_clock()
+    test_quant_bins_from_session_range_not_price()
+    test_quant_verdict_is_a_lookup_not_a_guess()
+    test_consensus_never_blends_into_one_score()
     print()
     if FAILS:
         print(f"FAILED ({len(FAILS)}): " + ", ".join(FAILS))
@@ -659,6 +662,85 @@ def test_resample_groups_by_index_not_clock() -> None:
     check("low is the min of the group", out[0].low == min(b.low for b in bars[:4]))
     check("close is the LAST close", out[0].close == bars[3].close)
     check("volume sums", out[0].volume == 20)
+
+
+
+# --- 23. quant + consensus --------------------------------------------------
+
+def test_quant_bins_from_session_range_not_price() -> None:
+    print("\n23. the profile is binned across the session's own range")
+    from core import quant
+    from core.instruments import resolve
+    from core.profile import Bar
+    from datetime import datetime, timedelta, timezone
+
+    def chunk(lo, hi, n=78):
+        t0 = datetime(2026, 9, 18, 13, 30, tzinfo=timezone.utc)
+        step = (hi - lo) / n
+        return [Bar(ts=t0 + timedelta(minutes=5 * i), open=lo + step * i,
+                    high=lo + step * i + step, low=lo + step * i,
+                    close=lo + step * i, volume=1000) for i in range(n)]
+
+    spy = resolve("SPY")
+    quiet = quant.session_bin(chunk(758.0, 762.0), spy)
+    wild = quant.session_bin(chunk(750.0, 780.0), spy)
+    check("a quiet session gets a fine bin", quiet < 0.2, f"{quiet}")
+    check("a wide session gets a coarser bin", wild > quiet, f"{wild} > {quiet}")
+    # ⛔ THE BUG THIS REPLACED: derive_bin(price) gave 0.50 for SPY whatever
+    # the range, so a 4-point session had 8 buckets in it.
+    check("(proof) bin sizing is NOT the price-level rule",
+          abs(quiet - 0.5) > 0.01 and abs(wild - 0.5) > 0.01,
+          "price-level sizing would give 0.50 for both")
+    for lo, hi in ((758.0, 762.0), (750.0, 780.0), (700.0, 701.0)):
+        bw = quant.session_bin(chunk(lo, hi), spy)
+        bins = (hi - lo) / bw
+        check(f"range {hi-lo:.0f} gives a usable bin count",
+              15 <= bins <= 90, f"{bins:.0f} bins")
+
+
+def test_quant_verdict_is_a_lookup_not_a_guess() -> None:
+    print("\n24. the quant verdict refuses to guess")
+    from core import quant
+
+    class S:
+        def __init__(self, poc, vah, val):
+            self.poc, self.vah, self.val = poc, vah, val
+
+    prior = S(760.0, 762.0, 758.0)
+    check("above value is bullish",
+          quant.verdict(765.0, prior)["bias"] == "bullish")
+    check("below value is bearish",
+          quant.verdict(754.0, prior)["bias"] == "bearish")
+    check("inside value is neutral",
+          quant.verdict(760.5, prior)["bias"] == "neutral")
+    # ⛔ unknown, never a default
+    check("no price -> unknown", quant.verdict(None, prior)["state"] == "unknown")
+    check("no session -> unknown", quant.verdict(760.0, None)["state"] == "unknown")
+    check("unknown carries no bias", quant.verdict(None, None)["bias"] is None)
+    # the edge band stops a tick over the VAH reading as acceptance
+    check("a tick over VAH is not yet 'above'",
+          quant.verdict(762.05, prior)["state"] != "above",
+          "an 8% band of the value width")
+
+
+def test_consensus_never_blends_into_one_score() -> None:
+    print("\n25. the three inputs are reported, never averaged")
+    from core import consensus
+
+    src = open(os.path.join(ROOT, "core/consensus.py")).read()
+    check("there is no weighted score", '"score": None' in src,
+          "a single number would hide which input was wrong")
+    r = consensus.read("SPY", "24h")
+    check("all three components are present", len(r["components"]) == 3,
+          str([c["component"] for c in r["components"]]))
+    x = [c for c in r["components"] if c["component"] == "x"][0]
+    # ⛔ An absent input must not vote.
+    check("X reports unavailable, not neutral",
+          x.get("unavailable") and x.get("bias") is None, str(x.get("bias")))
+    check("disagreement is surfaced, not smoothed",
+          r["agreement"] in ("agree", "split", "single", "none"), r["agreement"])
+    check("the headline names the components when they split",
+          r["agreement"] != "split" or " vs " in r["headline"], r["headline"])
 
 if __name__ == "__main__":
     sys.exit(main())
