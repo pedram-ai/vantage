@@ -52,7 +52,7 @@ jobs:
           gcloud run deploy "$SERVICE" --source . \
             --project="$PROJECT_ID" --region="$REGION" \
             --no-allow-unauthenticated \
-            --set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,VANTAGE_ALLOWED_EMAILS=pedram@patexia.com,SES_AWS_REGION=us-east-1,"SES_FROM_EMAIL=Vantage <vantage@notify.patexia.com>",SES_REPLY_TO=pedram@patexia.com \
+            --set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,VANTAGE_ALLOWED_EMAILS=pedram@patexia.com,VANTAGE_BASE_URL=https://vantage-424459368059.us-central1.run.app,SES_AWS_REGION=us-east-1,"SES_FROM_EMAIL=Vantage <vantage@notify.patexia.com>",SES_REPLY_TO=pedram@patexia.com \
             --set-secrets="AWS_ACCESS_KEY_ID=projects/349112552843/secrets/connect-redesign-aws-access-key-id:latest,AWS_SECRET_ACCESS_KEY=projects/349112552843/secrets/connect-redesign-aws-secret-access-key:latest" \
             --memory=512Mi --cpu=1 --timeout=120 --max-instances=2 --quiet
 

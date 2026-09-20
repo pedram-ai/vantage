@@ -20,8 +20,11 @@
     {% else %}<span class="chip off">Not configured</span>{% endif %}
   </p>
   <p class="faint">Register an app at <a href="https://developer.schwab.com" target="_blank"
-     rel="noopener">developer.schwab.com</a> with this exact callback URL:<br>
-    <span class="fig">{{ redirect_uri }}</span></p>
+     rel="noopener">developer.schwab.com</a> — enable <b>both</b> Market Data Production and
+     Accounts and Trading Production — with this <b>exact</b> callback URL:<br>
+    <span class="fig" style="user-select:all">{{ redirect_uri }}</span><br>
+    Approval takes 1–3 days. ⚠ Status <b>Approved - Pending</b> is not usable yet; wait for
+    <b>Ready For Use</b>.</p>
   <form class="inline" method="post" action="/settings/schwab">
     <input name="app_key" placeholder="App key" style="width:230px" autocomplete="off">
     <input name="app_secret" type="password" placeholder="App secret" style="width:180px" autocomplete="off">
