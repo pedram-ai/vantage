@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Argent Ridge{% endblock %}</title>
+<style>
+:root{
+  --paper:#f6f7f9; --card:#ffffff; --line:#e6eaef; --ink:#26313d; --muted:#6e7c8a;
+  --faint:#93a1b0; --accent:#3e7c8f; --down:#c05b4d; --down-soft:#fbecea;
+  --soft:ui-rounded,"SF Pro Rounded",system-ui,-apple-system,"Segoe UI Variable",Roboto,sans-serif;
+  --body:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{--paper:#111820;--card:#19222c;--line:#2a3643;--ink:#e7edf3;--muted:#9aa9b8;
+        --faint:#7a8998;--accent:#68aabd;--down:#e08375;--down-soft:#341c19;}
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);
+     min-height:100vh;display:grid;place-items:center;padding:24px;}
+.gate{background:var(--card);border:1px solid var(--line);border-radius:18px;
+      padding:40px 36px 30px;width:100%;max-width:380px;
+      box-shadow:0 6px 30px rgba(25,40,60,.07);}
+.wordmark{font-family:var(--soft);font-size:23px;font-weight:700;letter-spacing:2.5px;
+          margin:0;text-align:center;}
+.tag{font-size:13px;color:var(--muted);text-align:center;margin:6px 0 24px;}
+.who{font-size:13px;color:var(--muted);text-align:center;margin:-12px 0 18px;}
+label{display:block;font-family:var(--soft);font-size:11px;font-weight:650;
+      letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:0 0 5px;}
+input{width:100%;font-family:var(--body);font-size:15px;padding:10px 12px;
+      border:1px solid var(--line);border-radius:10px;background:var(--paper);
+      color:var(--ink);margin-bottom:16px;}
+input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent);}
+.btn{width:100%;font-family:var(--soft);background:var(--accent);color:#fff;border:none;
+     border-radius:10px;padding:11px 14px;font-size:14px;font-weight:650;cursor:pointer;
+     text-decoration:none;display:block;text-align:center;}
+.btn:hover{filter:brightness(1.06);}
+.err{background:var(--down-soft);border:1px solid var(--down);color:var(--down);
+     border-radius:10px;padding:10px 13px;font-size:13px;margin-bottom:18px;}
+.foot{font-size:12px;color:var(--faint);text-align:center;margin:18px 0 0;}
+</style>
+</head>
+<body>{% block content %}{% endblock %}</body>
+</html>

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Users · Argent Ridge{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>Users</h1>
+  <p class="muted">Accounts exist only because you create them here.
+    There is no public sign-up and no self-service password reset.</p>
+</div>
+
+{% if link %}
+<div class="card">
+  <div class="banner info">
+    <b>Setup link for {{ created }}</b> — send this to them. It works once and
+    expires in 48 hours. They choose their own password; you never see it.
+    <p style="margin:8px 0 0"><input value="{{ link }}" readonly
+       onclick="this.select()" style="width:100%"></p>
+  </div>
+</div>
+{% elif created %}
+<div class="card"><div class="banner warn">{{ created }}</div></div>
+{% endif %}
+
+<div class="card">
+  <h2>Add a user</h2>
+  <form class="inline" method="post" action="/users">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input name="email" type="email" placeholder="email" required style="width:220px">
+    <input name="name" placeholder="name (optional)" style="width:150px">
+    <select name="role"><option value="staff">staff</option><option value="owner">owner</option></select>
+    <button class="btn" type="submit">Create</button>
+  </form>
+  <p class="faint">Staff see the market pages. Owner also manages users.</p>
+</div>
+
+<div class="card">
+  <div class="tscroll"><table>
+    <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th>
+      <th>Last sign-in</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr>
+        <td class="sym">{{ u.email }}{% if u.email == me.email %}
+          <span class="sub">you</span>{% endif %}</td>
+        <td>{{ u.name }}</td>
+        <td><span class="chip {{ 'call' if u.role == 'owner' else 'off' }}">{{ u.role }}</span></td>
+        <td>
+          {% if u.disabled %}<span class="chip put">disabled</span>
+          {% elif not u.last_login %}<span class="chip wait">never signed in</span>
+          {% else %}<span class="chip call">active</span>{% endif %}
+        </td>
+        <td class="sub">{{ u.last_login[:16]|replace('T',' ') if u.last_login else '—' }}</td>
+        <td class="r">
+          <form method="post" action="/users/{{ u.email }}/reset" style="display:inline">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="btn danger" type="submit">reset password</button></form>
+          {% if u.email != me.email %}
+            {% if u.disabled %}
+            <form method="post" action="/users/{{ u.email }}/enable" style="display:inline">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <button class="btn danger" type="submit">enable</button></form>
+            {% else %}
+            <form method="post" action="/users/{{ u.email }}/disable" style="display:inline">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <button class="btn danger" type="submit">disable</button></form>
+            {% endif %}
+            <form method="post" action="/users/{{ u.email }}/delete" style="display:inline"
+                  onsubmit="return confirm('Delete {{ u.email }}?')">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <button class="btn danger" type="submit">delete</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}

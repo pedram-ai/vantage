@@ -1,0 +1,25 @@
+{% extends "shell.html" %}
+{% block title %}Set your password · Argent Ridge{% endblock %}
+{% block content %}
+<div class="gate">
+  <h1 class="wordmark">ARGENT RIDGE</h1>
+  <p class="tag">{{ 'Set your password' if user else 'Link not valid' }}</p>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  {% if user %}
+  <p class="who">{{ user.email }}</p>
+  <form method="post" action="/setup/{{ token }}">
+    <label for="password">New password</label>
+    <input id="password" name="password" type="password" required autofocus
+           autocomplete="new-password" minlength="12">
+    <label for="confirm">Confirm</label>
+    <input id="confirm" name="confirm" type="password" required
+           autocomplete="new-password" minlength="12">
+    <button class="btn" type="submit">Set password</button>
+  </form>
+  <p class="foot">At least 12 characters.</p>
+  {% else %}
+  <p class="foot">Ask an administrator for a new setup link.</p>
+  <p><a class="btn" href="/login">Back to sign in</a></p>
+  {% endif %}
+</div>
+{% endblock %}

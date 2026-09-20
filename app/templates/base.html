@@ -143,6 +143,10 @@ abbr{text-decoration:underline dotted rgba(140,155,170,.7);cursor:help;text-unde
     <a href="/positions" class="{{ 'on' if page=='positions' }}">Positions</a>
     <a href="/performance" class="{{ 'on' if page=='performance' }}">Performance</a>
     <a href="/settings" class="{{ 'on' if page=='settings' }}">Settings</a>
+    {% if me and me.role == 'owner' %}
+    <a href="/users" class="{{ 'on' if page=='users' }}">Users</a>
+    {% endif %}
+    {% if me %}<a href="/logout" style="margin-left:auto;opacity:.75">Sign out</a>{% endif %}
   </nav>
 </header>
 <main>
