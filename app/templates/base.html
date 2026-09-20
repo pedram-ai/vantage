@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Vantage{% endblock %}</title>
+<title>{% block title %}Argent Ridge{% endblock %}</title>
 <style>
 :root{
   --paper:#f6f7f9; --card:#ffffff; --line:#e6eaef; --line-soft:#eff2f5;
@@ -132,7 +132,7 @@ abbr{text-decoration:underline dotted rgba(140,155,170,.7);cursor:help;text-unde
 <body>
 <header>
   <div class="htop">
-    <a href="/" class="brand">VANTAGE</a>
+    <a href="/" class="brand">ARGENT RIDGE</a>
     {% if tape %}<div class="tape">
       {% for t in tape %}<span>{{ t.symbol }} <b>{{ '%.2f'|format(t.price) if t.price else '—' }}</b></span>{% endfor %}
     </div>{% endif %}

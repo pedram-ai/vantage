@@ -1,4 +1,4 @@
-"""Vantage web app.
+"""Argent Ridge web app.
 
 Auth is enforced upstream by Identity-Aware Proxy; the app additionally checks
 the IAP-asserted email against the allowlist.
@@ -26,7 +26,7 @@ from core.symbol_view import build_symbol, build_today
 ALLOWED = {e.strip().lower() for e in
            os.environ.get("VANTAGE_ALLOWED_EMAILS", "pedram@patexia.com").split(",")}
 
-app = FastAPI(title="Vantage")
+app = FastAPI(title="Argent Ridge")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.globals["GLOSSARY"] = GLOSSARY
 templates.env.globals["TIMEFRAMES"] = TIMEFRAMES

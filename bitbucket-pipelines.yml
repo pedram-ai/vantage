@@ -1,0 +1,41 @@
+# Argent Ridge — deploy to Cloud Run on push to main.
+#
+# ⚠ AUTH IS NOT WIRED YET. The GitHub Actions workflow used Workload Identity
+# Federation with NO service-account key, and that trust is scoped to GitHub's
+# OIDC issuer. Bitbucket has its own issuer, so WIF must be re-pointed before
+# this pipeline can deploy. See infra/setup-bitbucket-wif.sh — it needs a
+# working `gcloud auth login` first.
+#
+# Until then this pipeline RUNS THE TESTS ONLY, which is the honest state:
+# a green pipeline that silently skips deployment would be worse than none.
+
+image: python:3.12
+
+definitions:
+  steps:
+    - step: &tests
+        name: Tests
+        caches:
+          - pip
+        script:
+          - pip install -r requirements.txt
+          - python -m tests.test_regression
+          - python -m tests.test_email_guard
+          - python -m tests.test_quote_source
+          - python -m tests.test_instruments
+          - python -m tests.test_schwab_import
+
+pipelines:
+  default:
+    - step: *tests
+  branches:
+    main:
+      - step: *tests
+      # - step:                      # enable once WIF is re-pointed at Bitbucket
+      #     name: Deploy
+      #     oidc: true
+      #     image: google/cloud-sdk:alpine
+      #     deployment: production
+      #     script:
+      #       - echo $GCP_WIF_TOKEN > /tmp/token.json
+      #       - gcloud iam workload-identity-pools create-cred-config ...
