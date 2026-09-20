@@ -32,8 +32,11 @@
     <div class="pills">
       <span class="pill on">{{ current.name }}</span>
       {% if not current.auto %}
-      <form method="post" action="/watchlists/{{ current.id }}/symbols" class="inline">
-        <input name="symbol" placeholder="Add symbol" style="width:120px" required>
+      <form method="post" action="/watchlists/{{ current.id }}/symbols" class="inline ac-wrap">
+        <input name="symbol" id="symq" placeholder="Add symbol" style="width:150px"
+               autocomplete="off" required
+               data-ac="/api/symbols" aria-autocomplete="list" aria-expanded="false">
+        <div class="ac-menu" id="symac" role="listbox" hidden></div>
         <button class="btn ghost" type="submit">＋ Add</button>
       </form>
       {% endif %}
@@ -102,4 +105,60 @@
 
 </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Symbol autocomplete.
+   ⛔ The form must keep working with this script broken or disabled: it is a
+   plain input inside a plain POST form, and everything below only adds a menu.
+   ⚠ Requests are debounced and the LAST one wins -- without the sequence guard
+   a slow response for "N" can land after a fast one for "NVDA" and repaint the
+   menu with results for what you already stopped typing. */
+(function () {
+  var box = document.getElementById('symq'), menu = document.getElementById('symac');
+  if (!box || !menu) return;
+  var timer = null, seq = 0, items = [], active = -1;
+
+  function close() { menu.hidden = true; box.setAttribute('aria-expanded', 'false'); active = -1; }
+  function pick(i) {
+    if (i < 0 || i >= items.length) return;
+    box.value = items[i].symbol; close(); box.focus();
+  }
+  function draw() {
+    if (!items.length) { close(); return; }
+    menu.innerHTML = items.map(function (r, i) {
+      return '<button type="button" class="ac-row' + (i === active ? ' on' : '') +
+        '" data-i="' + i + '" role="option">' +
+        '<b>' + r.symbol + '</b>' +
+        '<span class="ac-name">' + (r.name || '') + '</span>' +
+        '<span class="ac-kind">' + (r.local ? '&#9733; ' + r.kind : r.kind) + '</span></button>';
+    }).join('');
+    menu.hidden = false; box.setAttribute('aria-expanded', 'true');
+  }
+  menu.addEventListener('mousedown', function (e) {
+    var b = e.target.closest('.ac-row'); if (b) { e.preventDefault(); pick(+b.dataset.i); }
+  });
+  box.addEventListener('input', function () {
+    clearTimeout(timer);
+    var q = box.value.trim();
+    if (q.length < 1) { items = []; close(); return; }
+    timer = setTimeout(function () {
+      var mine = ++seq;
+      fetch('/api/symbols?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+        .then(function (d) { if (mine !== seq) return; items = d.results || []; active = -1; draw(); })
+        .catch(function () { /* typing still works */ });
+    }, 140);
+  });
+  box.addEventListener('keydown', function (e) {
+    if (menu.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, items.length - 1); draw(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); draw(); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); pick(active); }
+    else if (e.key === 'Escape') { close(); }
+  });
+  box.addEventListener('blur', function () { setTimeout(close, 120); });
+})();
+</script>
 {% endblock %}

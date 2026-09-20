@@ -45,11 +45,21 @@ def _warm_cache() -> None:
     import threading
 
     def go():
-        try:
-            from core import portfolio
-            portfolio.performance("all")
-        except Exception:  # noqa: BLE001
-            pass
+        # Each in its own try: a failing warm-up must never stop the others,
+        # and none of them may stop the app from starting.
+        for warm in (
+            lambda: __import__("core.portfolio", fromlist=["x"]).performance("all"),
+            lambda: __import__("core.store", fromlist=["x"]).get_settings(),
+            lambda: __import__("core.watchlists", fromlist=["x"]).all_lists(),
+            # ⚠ System health probes Yahoo, Schwab and Firestore — 3.6 s on a
+            # cold read. Priming it here means the first admin page load is
+            # warm rather than the one that pays for it.
+            lambda: __import__("core.sysheath", fromlist=["x"]).snapshot(),
+        ):
+            try:
+                warm()
+            except Exception:  # noqa: BLE001
+                pass
 
     threading.Thread(target=go, daemon=True).start()
 
@@ -81,7 +91,16 @@ def _money(value, dp: int = 0, signed: bool = False, symbol: str = "$") -> str:
     return f"+{body}" if signed else body
 
 
+def _pt_date(iso):
+    """UTC ISO -> Pacific, for template use. Never raises.
+
+    ⛔ Every clock time on screen is Pacific; UTC is storage only."""
+    from core import research
+    return research.pt_date(iso)
+
+
 templates.env.filters["money"] = _money
+templates.env.filters["pt_date"] = _pt_date
 
 
 class NeedsLogin(Exception):
@@ -234,6 +253,91 @@ def today(request: Request, list: str = "", refresh: int = 0):
         "list_name": current.get("name") if current else "no list",
         "degraded": batch.get("degraded"), "cap": batch.get("cap"),
     }))
+
+
+@app.get("/api/symbols")
+def api_symbols(request: Request, q: str = ""):
+    """Autocomplete for the Add-symbol box. Signed-in only — it is a proxy to
+    an external service and must not be open to the internet."""
+    check_user(request)
+    from core import symbol_search
+    return {"q": q, "results": symbol_search.search(q)}
+
+
+# --- Research ---------------------------------------------------------------
+
+@app.get("/research", response_class=HTMLResponse)
+def research_page(request: Request, tab: str = "articles", source: str = "",
+                  page: int = 1):
+    check_user(request)
+    from core import llm, research
+    research.seed_sources()
+    feed = (research.list_articles(source=source, preview=True, page=page)
+            if tab == "articles" else {"rows": [], "pages": 1, "page": 1, "total": 0})
+    return templates.TemplateResponse(request, "research.html", _ctx(request, **{
+        "page": "research", "tape": _tape(), "tab": tab,
+        "articles": feed["rows"], "feed": feed, "sources": research.all_sources(),
+        "source": source, "counts": research.counts(),
+        "job": research.job_status(),
+        "llm": llm.status(),
+    }))
+
+
+@app.get("/research/{aid}", response_class=HTMLResponse)
+def research_article(request: Request, aid: str):
+    """One article in full, with its read. The list carries a preview only."""
+    check_user(request)
+    from core import research
+    a = research.get_article(aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="No such article")
+    return templates.TemplateResponse(request, "article.html", _ctx(request, **{
+        "a": a, "page": "research", "tape": _tape(),
+    }))
+
+
+@app.post("/research/refresh")
+def research_refresh(request: Request):
+    check_user(request)
+    from core import research
+    research.refresh()
+    return RedirectResponse("/research", status_code=303)
+
+
+@app.post("/research/read")
+def research_read(request: Request, limit: int = Form(8)):
+    """Kick off the background pass. ⛔ Never blocks — a read is ~18 s."""
+    check_user(request)
+    from core import research
+    research.start_summarise(int(limit))
+    return RedirectResponse("/research?reading=1", status_code=303)
+
+
+@app.get("/api/research/job")
+def research_job(request: Request):
+    check_user(request)
+    from core import research
+    return research.job_status()
+
+
+@app.post("/research/sources")
+def research_add_source(request: Request, handle: str = Form(""),
+                        label: str = Form(""), kind: str = Form("substack")):
+    require_owner(request)
+    from core import research
+    try:
+        research.add_source(kind, handle, label)
+    except ValueError:
+        pass
+    return RedirectResponse("/research?tab=sources", status_code=303)
+
+
+@app.post("/research/sources/{sid}/delete")
+def research_del_source(request: Request, sid: str):
+    require_owner(request)
+    from core import research
+    research.delete_source(sid)
+    return RedirectResponse("/research?tab=sources", status_code=303)
 
 
 # --- Markets / watchlists ---------------------------------------------------

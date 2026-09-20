@@ -117,8 +117,27 @@ def list_users() -> list[dict]:
     return sorted(out, key=lambda r: r.get("created_at", ""))
 
 
+_COUNT: tuple[float, int] | None = None
+_COUNT_TTL = 120.0
+
+
 def user_count() -> int:
-    return sum(1 for _ in _users().stream())
+    """⚠ Streams the whole collection, so it is cached. Busted by every
+    mutator below — an account added in the admin console must show up in the
+    same click, not two minutes later."""
+    global _COUNT
+    import time as _t
+    now = _t.monotonic()
+    if _COUNT and now - _COUNT[0] < _COUNT_TTL:
+        return _COUNT[1]
+    n = sum(1 for _ in _users().stream())
+    _COUNT = (now, n)
+    return n
+
+
+def _bust_count() -> None:
+    global _COUNT
+    _COUNT = None
 
 
 def create_user(email: str, name: str = "", role: str = "staff") -> dict:
@@ -146,6 +165,7 @@ def create_user(email: str, name: str = "", role: str = "staff") -> dict:
         "created_at": now_iso(),
         "last_login": None,
     })
+    _bust_count()
     return {"email": email, "setup_token": token}
 
 
@@ -159,6 +179,7 @@ def delete_user(email: str) -> None:
     email = normalize_email(email)
     revoke_all_sessions(email)
     _users().document(email).delete()
+    _bust_count()
 
 
 def new_setup_token(email: str, revoke_password: bool = True) -> str:

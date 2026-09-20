@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Research · Argent Ridge{% endblock %}
+{% set TABS = [
+  ("articles", "Articles", "Saved posts with a read on SPY and QQQ"),
+  ("tweets",   "Tweets",   "Not connected yet"),
+  ("news",     "News",     "Not connected yet"),
+  ("charts",   "Charts",   "Structure for the symbols you track"),
+  ("sources",  "Sources",  "Which feeds are pulled"),
+] %}
+{% block content %}
+<div class="split-page">
+  <div class="rail">
+    <h3>Research</h3>
+    <div class="lists">
+      {% for key, label, hint in TABS %}
+      <a class="li {{ 'on' if tab == key }}" href="/research?tab={{ key }}" title="{{ hint }}">
+        {{ label }}
+        {% if key == 'articles' %}<span>{{ counts.total }}</span>{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+
+    {% if tab == 'articles' and sources %}
+    <h3 style="margin-top:18px">Publication</h3>
+    <div class="lists">
+      <a class="li {{ 'on' if not source }}" href="/research">All</a>
+      {% for s in sources %}
+      <a class="li {{ 'on' if source == s.id }}" href="/research?source={{ s.id }}">{{ s.label }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="railmain">
+
+  {# ---------------------------------------------------------------- ARTICLES #}
+  {% if tab == 'articles' %}
+    <div class="pills">
+      <span class="plab">{{ counts.total }} saved</span>
+      <span class="pill">{{ counts.summarised }} read</span>
+      {% if counts.pending %}<span class="pill">{{ counts.pending }} pending</span>{% endif %}
+      {% if counts.paywalled %}
+      <span class="pill" title="Substack published only a teaser for these. Summarising a teaser
+would produce a confident read of an advertisement, so they are left alone.">{{ counts.paywalled }} paywalled</span>
+      {% endif %}
+      <form method="post" action="/research/refresh" class="inline" style="margin-left:auto">
+        <button class="btn ghost" type="submit">&#8635; Fetch new</button>
+      </form>
+      {% if counts.pending %}
+      <form method="post" action="/research/read" class="inline">
+        <input type="hidden" name="limit" value="8">
+        <button class="btn" type="submit" {{ 'disabled' if job.running }}>
+          {{ 'Reading…' if job.running else 'Read next 8' }}</button>
+      </form>
+      {% endif %}
+    </div>
+
+    {% if job.running %}
+    <div class="banner" id="jobbar">Reading {{ job.done }} of {{ job.total }}…
+      <span class="faint">about 18 seconds each; you can leave this page.</span></div>
+    {% elif job.finished and job.failed %}
+    <div class="banner warn">{{ job.failed|length }} could not be read:
+      {% for f in job.failed[:3] %}<span class="faint">{{ f.title[:40] }} — {{ f.reason }}</span>{% endfor %}</div>
+    {% endif %}
+
+    {% if not llm.credentials %}
+    <div class="banner warn">No Google credentials — reads cannot run.</div>
+    {% elif llm.last_error and not counts.summarised %}
+    <div class="banner warn">{{ llm.model or 'Gemini' }}: {{ llm.last_error[:160] }}</div>
+    {% endif %}
+
+    {% if not articles %}
+    <div class="card empty"><p>Nothing saved yet. <b>Fetch new</b> pulls the latest posts
+      from every source.</p></div>
+    {% endif %}
+
+    {% for a in articles %}
+    <div class="card art">
+      <div class="arthead">
+        <div>
+          <h2>{{ a.title }}</h2>
+          <p class="faint">{{ a.source_label }} · {{ a.published_at|pt_date }} ·
+            {{ a.chars }} chars ·
+            <a href="{{ a.url }}" target="_blank" rel="noopener">open on Substack &#8599;</a></p>
+        </div>
+        {% if a.read %}<span class="chip conf-{{ a.read.confidence }}">{{ a.read.confidence }} confidence</span>
+        {% elif a.paywalled %}<span class="chip off">teaser only</span>
+        {% else %}<span class="chip wait">not read yet</span>{% endif %}
+      </div>
+
+      <div class="artbody">
+        {# LEFT: the article itself, saved here in full #}
+        <div class="artext">
+          {% if a.paywalled %}
+          <p class="muted">Substack published only a teaser for this post — the full text is
+            behind the paywall, so there is nothing here to read.</p>
+          {% endif %}
+          <div class="prose">{{ a.body }}</div>
+          {% if a.truncated %}
+          <p class="faint" style="margin-top:9px">
+            <a href="/research/{{ a.id }}">Full text &rarr;</a></p>
+          {% endif %}
+        </div>
+
+        {# RIGHT: what it means for SPY and QQQ #}
+        <aside class="artread">
+          {% if a.read %}
+            <p class="gist">{{ a.read.gist }}</p>
+            {% for label, key in [('Next 24 hours','24h'), ('Through Friday','7d')] %}
+            <div class="horizon">
+              <div class="hlab">{{ label }}</div>
+              {% for sym in ['spy','qqq'] %}
+              {% set h = a.read[sym ~ '_' ~ key] %}
+              <div class="hrow">
+                <span class="hsym">{{ sym|upper }}</span>
+                <span class="dir d-{{ h.direction|replace(' ','-') }}">{{ h.direction }}</span>
+                <span class="hnote">{{ h.note }}</span>
+              </div>
+              {% if h.basis %}<div class="hbasis" title="The sentence this rests on">&ldquo;{{ h.basis }}&rdquo;</div>{% endif %}
+              {% endfor %}
+            </div>
+            {% endfor %}
+            {% if a.read.levels %}
+            <div class="horizon">
+              <div class="hlab">Levels named</div>
+              <div class="lvls">{% for l in a.read.levels %}<span class="lvl">{{ l }}</span>{% endfor %}</div>
+            </div>
+            {% endif %}
+            <p class="faint">Read by {{ a.read_model or 'Gemini' }} from the article text only —
+              it is given nothing else and quotes the sentence each call rests on.</p>
+          {% elif a.paywalled %}
+            <p class="muted">Not read.</p>
+            <p class="faint">Only a teaser was published. A read of a teaser would describe the
+              advertisement, not the analysis.</p>
+          {% else %}
+            <p class="muted">Not read yet.</p>
+            <p class="faint">Use <b>Read next 8</b> above.</p>
+          {% endif %}
+        </aside>
+      </div>
+    </div>
+    {% endfor %}
+
+    {% if feed.pages > 1 %}
+    <div class="pills">
+      <span class="plab">Page</span>
+      {% if feed.page > 1 %}
+      <a class="pill" href="/research?page={{ feed.page - 1 }}{{ '&source=' ~ source if source }}">&larr; Prev</a>
+      {% endif %}
+      {% for n in range(1, feed.pages + 1) %}
+      <a class="pill {{ 'on' if n == feed.page }}"
+         href="/research?page={{ n }}{{ '&source=' ~ source if source }}">{{ n }}</a>
+      {% endfor %}
+      {% if feed.page < feed.pages %}
+      <a class="pill" href="/research?page={{ feed.page + 1 }}{{ '&source=' ~ source if source }}">Next &rarr;</a>
+      {% endif %}
+      <span class="faint" style="margin-left:8px">{{ feed.total }} saved</span>
+    </div>
+    {% endif %}
+
+  {# ------------------------------------------------------------------ CHARTS #}
+  {% elif tab == 'charts' %}
+    <div class="card">
+      <h1>Charts</h1>
+      <p class="muted">Session structure for every symbol you track.</p>
+      <div class="pills">
+        {% for s in sources %}{% endfor %}
+        <a class="pill" href="/">Today &rarr;</a>
+        <a class="pill" href="/markets">Markets &rarr;</a>
+      </div>
+      <p class="faint">Candlesticks with prior POC, VAH and VAL live on the symbol pages.
+        A research-specific chart view is not built yet — this links to what exists rather
+        than showing an empty frame.</p>
+    </div>
+
+  {# ----------------------------------------------------------------- SOURCES #}
+  {% elif tab == 'sources' %}
+    <div class="card">
+      <h1>Sources</h1>
+      <p class="muted">Substack has no public API; these are its RSS feeds — about 20 recent
+        posts each, no account needed. Paid-only posts arrive as a teaser and are marked.</p>
+      <div class="tscroll"><table>
+        <thead><tr><th>Publication</th><th>Handle</th><th>Kind</th><th></th></tr></thead>
+        <tbody>
+        {% for s in sources %}
+        <tr>
+          <td><b>{{ s.label }}</b></td>
+          <td class="sub"><a href="https://{{ s.handle }}.substack.com" target="_blank"
+                             rel="noopener">{{ s.handle }}</a></td>
+          <td class="sub">{{ s.kind }}</td>
+          <td class="r">
+            <form method="post" action="/research/sources/{{ s.id }}/delete" class="inline">
+              <button class="btn ghost" type="submit">remove</button></form></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      <form method="post" action="/research/sources" class="inline" style="margin-top:14px">
+        <input name="handle" placeholder="handle or substack URL" style="width:230px" required>
+        <input name="label" placeholder="Label (optional)" style="width:170px">
+        <button class="btn" type="submit">Add source</button>
+      </form>
+    </div>
+
+  {# ------------------------------------------------------------ NOT BUILT YET #}
+  {% else %}
+    <div class="card empty">
+      <h1>{{ tab|capitalize }}</h1>
+      <p>Not connected yet.</p>
+      <p class="faint">Argent Ridge shows nothing here rather than a placeholder feed —
+        an empty panel that looks populated is worse than one that says it is empty.</p>
+    </div>
+  {% endif %}
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if job.running %}
+<script>
+/* Poll while a read pass is running. ⚠ Reloads only when it FINISHES, so the
+   page does not flicker every two seconds during a two-minute job. */
+(function () {
+  var t = setInterval(function () {
+    fetch('/api/research/job', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var bar = document.getElementById('jobbar');
+        if (bar && j.running) { bar.firstChild.nodeValue = 'Reading ' + j.done + ' of ' + j.total + '… '; }
+        if (!j.running) { clearInterval(t); location.reload(); }
+      })
+      .catch(function () { clearInterval(t); });
+  }, 2500);
+})();
+</script>
+{% endif %}
+{% endblock %}

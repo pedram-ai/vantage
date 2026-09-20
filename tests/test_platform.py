@@ -180,20 +180,62 @@ def test_settings_moved_not_deleted() -> None:
 
 def test_no_anthropic_anywhere() -> None:
     print("\n7. the AI panel is gone, not merely hidden")
+    # ⛔ MATCH USE, NOT PROSE. The first version of this guard grepped for the
+    # bare word and went red on `core/llm.py`, whose docstring exists to say
+    # Anthropic is NOT used — a guard that punishes documenting the rule is a
+    # guard people delete. These patterns are the ways the dependency could
+    # actually come back.
+    USE = [
+        (r"^\s*import\s+anthropic", "import anthropic"),
+        (r"^\s*from\s+anthropic", "from anthropic import"),
+        (r"anthropic\.Anthropic\s*\(", "client construction"),
+        (r"api\.anthropic\.com", "direct API call"),
+        (r"ANTHROPIC_API_KEY", "key env var"),
+        (r"[\"']anthropic-api-key[\"']", "key secret name"),
+        (r"[\"']claude-[a-z0-9.-]+[\"']", "a claude-* model id"),
+        (r"\bai_insights\b", "the deleted module"),
+    ]
     hits = []
-    for d in ("app", "core", "scripts"):
-        for root, _, files in os.walk(os.path.join(ROOT, d)):
+    for d in ("app", "core", "scripts", "jobs"):
+        base = os.path.join(ROOT, d)
+        if not os.path.isdir(base):
+            continue
+        for root, _, files in os.walk(base):
             for f in files:
                 if not f.endswith((".py", ".html", ".txt")):
                     continue
-                p = os.path.join(root, f)
-                body = open(p, errors="ignore").read()
-                if re.search(r"anthropic|ai_insights", body, re.I):
-                    hits.append(os.path.relpath(p, ROOT))
-    check("no Anthropic import, key or panel", not hits, ", ".join(hits) or "clean")
+                path = os.path.join(root, f)
+                body = open(path, errors="ignore").read()
+                for pat, what in USE:
+                    if re.search(pat, body, re.M):
+                        hits.append(f"{os.path.relpath(path, ROOT)}: {what}")
+    check("no Anthropic import, key, endpoint or model id", not hits,
+          ", ".join(hits) or "clean")
+
     reqs = open(os.path.join(ROOT, "requirements.txt")).read()
     check("dependency removed", "anthropic" not in reqs)
     check("module deleted", not os.path.exists(os.path.join(ROOT, "core/ai_insights.py")))
+
+    # ⛔ MUTATION PROOF: every pattern must actually fire on the thing it names.
+    samples = [
+        "import anthropic", "from anthropic import Anthropic",
+        "c = anthropic.Anthropic(api_key=k)", 'requests.post("https://api.anthropic.com/v1")',
+        'os.environ["ANTHROPIC_API_KEY"]', 'secret("anthropic-api-key")',
+        'MODEL = "claude-opus-5"', "from core import ai_insights",
+    ]
+    caught = sum(1 for smp in samples
+                 if any(re.search(pat, smp, re.M) for pat, _ in USE))
+    check("(proof) every reintroduction shape is caught",
+          caught == len(samples), f"{caught}/{len(samples)}")
+    # ...and prose about the rule is NOT a violation
+    prose = "Anthropic is not used anywhere in this app; use Gemini on Vertex."
+    check("(proof) documenting the rule is not a violation",
+          not any(re.search(pat, prose, re.M) for pat, _ in USE))
+
+    # and the replacement is wired
+    llm = open(os.path.join(ROOT, "core/llm.py")).read()
+    check("Gemini on Vertex is the LLM", "aiplatform.googleapis.com" in llm
+          and "gemini-" in llm)
 
 
 # --- 8. the caches that made it fast ---------------------------------------
@@ -225,6 +267,11 @@ def main() -> int:
     test_docs_renderer()
     test_search_ranks_by_hits()
     test_every_page_carries_the_build_stamp()
+    test_research_never_summarises_a_teaser()
+    test_research_schema_demands_a_basis()
+    test_research_refresh_never_destroys_a_read()
+    test_research_reads_are_off_the_request_path()
+    test_research_paywall_threshold_is_measured()
     print()
     if FAILS:
         print(f"FAILED ({len(FAILS)}): " + ", ".join(FAILS))
@@ -318,6 +365,70 @@ def test_every_page_carries_the_build_stamp() -> None:
     check("the signed-out shell has a footer", "shellfoot" in shell)
     base = open(os.path.join(ROOT, "app/templates/base.html")).read()
     check("the signed-in shell has a footer", "sitefoot" in base)
+
+
+
+# --- 13. research -----------------------------------------------------------
+
+def test_research_never_summarises_a_teaser() -> None:
+    print("\n13. research: a paywalled teaser is marked, never read")
+    from core import research as R
+
+    teaser = {"id": "x", "body": "Subscribe to read the rest.", "paywalled": True,
+              "title": "t", "source_label": "s"}
+    r = R.summarise(teaser)
+    check("a teaser is refused", not r["ok"] and "paywall" in r["reason"],
+          r.get("reason", ""))
+    # ⛔ MUTATION PROOF: without the paywalled guard this would reach the model.
+    short = {"id": "y", "body": "x" * 50, "paywalled": False,
+             "title": "t", "source_label": "s"}
+    r2 = R.summarise(short)
+    check("(proof) too-little-text is also refused",
+          not r2["ok"] and "too little" in r2["reason"], r2.get("reason", ""))
+
+
+def test_research_schema_demands_a_basis() -> None:
+    print("\n14. every direction must cite the sentence it rests on")
+    from core import research as R
+    for key in ("spy_24h", "qqq_24h", "spy_7d", "qqq_7d"):
+        h = R.SCHEMA["properties"][key]
+        check(f"{key} requires basis", "basis" in h["required"])
+        check(f"{key} can say 'not stated'",
+              "not stated" in h["properties"]["direction"]["enum"])
+    check("the prompt forbids inventing",
+          "NEVER invent" in R.SYSTEM and "no advice" in R.SYSTEM.lower())
+
+
+def test_research_refresh_never_destroys_a_read() -> None:
+    print("\n15. re-fetching must not wipe a stored summary")
+    src = open(os.path.join(ROOT, "core/research.py")).read()
+    body = src[src.index("def refresh("):src.index("# --- reading")]
+    check("refresh skips articles it already has",
+          "ref.get().exists" in body and "continue" in body,
+          "an overwrite would drop `read` on every fetch")
+    check("it does not call .set() on an existing id",
+          body.count("ref.set(art)") == 1)
+
+
+def test_research_reads_are_off_the_request_path() -> None:
+    print("\n16. an 18-second read never blocks a request")
+    main = open(os.path.join(ROOT, "app/main.py")).read()
+    route = main[main.index('@app.post("/research/read")'):
+                 main.index('@app.get("/api/research/job")')]
+    check("the route starts a background job", "start_summarise" in route)
+    check("it does not call summarise() directly",
+          "summarise_pending" not in route and ".summarise(" not in route,
+          "this is the 3.5 s AI-panel defect, rebuilt")
+    src = open(os.path.join(ROOT, "core/research.py")).read()
+    check("the worker is a daemon thread", "_th.Thread" in src and "daemon=True" in src)
+
+
+def test_research_paywall_threshold_is_measured() -> None:
+    print("\n17. the paywall cutoff separates the real feeds")
+    from core import research as R
+    # Measured 2026-09-20: full posts 2,843–13,378 chars; teasers ~186–210.
+    check("threshold sits between teaser and post",
+          210 < R.PAYWALL_CHARS < 2843, f"{R.PAYWALL_CHARS} chars")
 
 if __name__ == "__main__":
     sys.exit(main())

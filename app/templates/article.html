@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ a.title }} · Argent Ridge{% endblock %}
+{% block content %}
+<p class="faint"><a href="/research">&larr; Research</a></p>
+<div class="card art">
+  <div class="arthead">
+    <div>
+      <h1 style="font-size:19px;margin:0 0 4px">{{ a.title }}</h1>
+      <p class="faint">{{ a.source_label }} · {{ a.published_at|pt_date }} ·
+        {{ a.chars }} chars ·
+        <a href="{{ a.url }}" target="_blank" rel="noopener">open on Substack &#8599;</a></p>
+    </div>
+    {% if a.read %}<span class="chip conf-{{ a.read.confidence }}">{{ a.read.confidence }} confidence</span>
+    {% elif a.paywalled %}<span class="chip off">teaser only</span>
+    {% else %}<span class="chip wait">not read yet</span>{% endif %}
+  </div>
+  <div class="artbody">
+    <div class="artext">
+      <div class="prose" style="max-height:none">{{ a.body }}</div>
+    </div>
+    <aside class="artread">
+      {% if a.read %}
+        <p class="gist">{{ a.read.gist }}</p>
+        {% for label, key in [('Next 24 hours','24h'), ('Through Friday','7d')] %}
+        <div class="horizon">
+          <div class="hlab">{{ label }}</div>
+          {% for sym in ['spy','qqq'] %}
+          {% set h = a.read[sym ~ '_' ~ key] %}
+          <div class="hrow">
+            <span class="hsym">{{ sym|upper }}</span>
+            <span class="dir d-{{ h.direction|replace(' ','-') }}">{{ h.direction }}</span>
+            <span class="hnote">{{ h.note }}</span>
+          </div>
+          {% if h.basis %}<div class="hbasis">&ldquo;{{ h.basis }}&rdquo;</div>{% endif %}
+          {% endfor %}
+        </div>
+        {% endfor %}
+        {% if a.read.levels %}
+        <div class="horizon">
+          <div class="hlab">Levels named</div>
+          <div class="lvls">{% for l in a.read.levels %}<span class="lvl">{{ l }}</span>{% endfor %}</div>
+        </div>
+        {% endif %}
+        <p class="faint">Read by {{ a.read_model or 'Gemini' }} from this text only.
+          Each call quotes the sentence it rests on.</p>
+      {% elif a.paywalled %}
+        <p class="muted">Not read — only a teaser was published.</p>
+      {% else %}
+        <p class="muted">Not read yet.</p>
+      {% endif %}
+    </aside>
+  </div>
+</div>
+{% endblock %}

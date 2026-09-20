@@ -46,7 +46,22 @@ def _title_of(path: Path, text: str) -> str:
     return path.stem.replace("-", " ").replace("_", " ").title()
 
 
+_DOCS_CACHE: list[dict] | None = None
+
+
 def list_docs() -> list[dict]:
+    """⚠ Cached for the life of the process, deliberately. These files are
+    baked into the container image and cannot change while it runs — re-reading
+    17 files from disk on every admin page view buys nothing. A deploy is what
+    produces new documents, and a deploy is a new process."""
+    global _DOCS_CACHE
+    if _DOCS_CACHE is not None:
+        return [dict(d) for d in _DOCS_CACHE]
+    _DOCS_CACHE = _list_docs_uncached()
+    return [dict(d) for d in _DOCS_CACHE]
+
+
+def _list_docs_uncached() -> list[dict]:
     seen, out = set(), []
     for group, d in DOC_GROUPS:
         if not d.is_dir():

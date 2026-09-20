@@ -13,7 +13,7 @@ from google.cloud import firestore
 
 from .instruments import resolve
 from .profile import ET
-from .store import db, now_iso
+from .store import _bust, _cached, db, now_iso
 
 COLL = "watchlists"
 
@@ -29,12 +29,27 @@ def _norm(sym: str) -> str:
     return (sym or "").strip().upper()
 
 
+_SEEDED = False
+
+
 def ensure_seed() -> None:
-    """First run gets one list so Markets is never an empty page."""
-    if any(True for _ in db().collection(COLL).limit(1).stream()):
+    """Create the default list the first time, and only the first time.
+
+    ⚠ This is called at the top of BOTH `/` and `/markets`, so before the guard
+    it was a Firestore round trip on every navigation to either page — to ask a
+    question whose answer, once true, can never become false again. Seeding
+    happens once per process; `all_lists()` is cached, so the check itself is
+    free after that.
+    """
+    global _SEEDED
+    if _SEEDED:
+        return
+    if all_lists():
+        _SEEDED = True
         return
     for row in DEFAULT_LISTS:
         create(row["name"], row["symbols"])
+    _SEEDED = True
 
 
 def create(name: str, symbols: list[str] | None = None) -> str:
@@ -46,16 +61,19 @@ def create(name: str, symbols: list[str] | None = None) -> str:
         "order": n,
         "created_at": now_iso(),
     })
+    _bust("lists")
     return ref.id
 
 
 def rename(list_id: str, name: str) -> None:
     db().collection(COLL).document(list_id).set(
         {"name": name.strip() or "Untitled"}, merge=True)
+    _bust("lists")
 
 
 def delete(list_id: str) -> None:
     db().collection(COLL).document(list_id).delete()
+    _bust("lists")
 
 
 def add_symbol(list_id: str, symbol: str) -> None:
@@ -64,34 +82,37 @@ def add_symbol(list_id: str, symbol: str) -> None:
         return
     db().collection(COLL).document(list_id).update(
         {"symbols": firestore.ArrayUnion([s])})
+    _bust("lists")
 
 
 def remove_symbol(list_id: str, symbol: str) -> None:
     db().collection(COLL).document(list_id).update(
         {"symbols": firestore.ArrayRemove([_norm(symbol)])})
+    _bust("lists")
 
 
 def get(list_id: str) -> dict | None:
     if list_id in (AUTO_HELD, AUTO_TRADED):
         return _auto_list(list_id)
-    doc = db().collection(COLL).document(list_id).get()
-    if not doc.exists:
-        return None
-    d = doc.to_dict()
-    d["id"] = doc.id
-    d["auto"] = False
-    return d
+    # ⚠ Served from the same cached read as all_lists(), so opening a list does
+    # not cost a second round trip. Every mutator below calls _bust("lists").
+    for d in all_lists():
+        if d["id"] == list_id:
+            return dict(d)
+    return None
 
 
 def all_lists() -> list[dict]:
-    out = []
-    for doc in db().collection(COLL).stream():
-        d = doc.to_dict()
-        d["id"] = doc.id
-        d["auto"] = False
-        out.append(d)
-    out.sort(key=lambda r: (r.get("order", 99), r.get("name", "")))
-    return out
+    def load():
+        out = []
+        for doc in db().collection(COLL).stream():
+            d = doc.to_dict()
+            d["id"] = doc.id
+            d["auto"] = False
+            out.append(d)
+        out.sort(key=lambda r: (r.get("order", 99), r.get("name", "")))
+        return out
+    return [dict(r) for r in _cached("lists", load)]
 
 
 def _auto_list(kind: str) -> dict:
